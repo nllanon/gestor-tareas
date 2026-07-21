@@ -1,0 +1,1339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Gestor de tareas de Nico Llano</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#f7f7f5;
+    --panel:#ffffff;
+    --border:#e2e0db;
+    --text:#26241f;
+    --muted:#726f66;
+    --accent:#25D366;
+    --accent-dark:#128C7E;
+    --accent-soft:#e3f9ec;
+    --danger:#a4432f;
+    --radius:8px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    font-size:14px;
+    line-height:1.4;
+  }
+  .app{max-width:1100px;margin:0 auto;padding:12px;}
+  h1{font-size:17px;margin:0 0 10px 0;}
+  h2{font-size:15px;margin:0 0 10px 0;color:var(--text);}
+
+  nav{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;}
+  nav button{
+    padding:9px 10px;border:1px solid var(--border);background:var(--panel);
+    border-radius:var(--radius);cursor:pointer;font-size:12.5px;color:var(--text);
+    min-height:40px;flex:1 1 auto;white-space:nowrap;position:relative;
+  }
+  nav button.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  @media (max-width:480px){
+    nav button{font-size:11.5px;padding:8px 6px;}
+  }
+
+  .nav-secondary{margin-bottom:14px;}
+  .nav-secondary button{min-height:32px;font-size:11px;padding:6px 8px;font-weight:500;}
+
+  .notif-badge{
+    position:absolute;top:-6px;right:-6px;background:#ff3b30;color:#fff;
+    border-radius:999px;min-width:18px;height:18px;padding:0 4px;
+    font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;
+    line-height:1;box-shadow:0 0 0 2px var(--bg);
+  }
+
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px;}
+
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px;margin-top:8px;}
+  input[type=text],input[type=date],select,textarea{
+    width:100%;padding:9px 8px;border:1px solid var(--border);border-radius:6px;
+    font-size:14px;background:#fff;color:var(--text);font-family:inherit;min-height:38px;
+  }
+  textarea{resize:vertical;}
+  .row{display:flex;gap:10px;flex-wrap:wrap;}
+  .row > div{flex:1;min-width:140px;}
+  .field-with-btn{display:flex;gap:6px;align-items:flex-end;}
+  .field-with-btn > div{flex:1;}
+
+  button.primary,button.secondary,button.danger{
+    min-height:40px;padding:0 14px;border-radius:6px;cursor:pointer;
+    font-size:13px;font-weight:600;line-height:1;box-sizing:border-box;
+  }
+  button.primary{background:var(--accent);color:#fff;border:none;}
+  button.secondary{background:#fff;color:var(--text);border:1px solid var(--border);}
+  button.danger{background:#fff;color:var(--danger);border:1px solid var(--danger);}
+  .task-actions{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;}
+  .task-actions button{flex:1 1 auto;min-width:110px;}
+  @media (max-width:480px){
+    .task-actions button{min-width:0;flex:1 1 45%;}
+  }
+
+  .icon-actions{display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0;}
+  .icon-btn{
+    width:34px;height:34px;padding:0;border:1px solid var(--border);background:var(--panel);
+    border-radius:var(--radius);cursor:pointer;font-size:12.5px;color:var(--text);
+    display:inline-flex;align-items:center;justify-content:center;
+    box-sizing:border-box;flex-shrink:0;
+  }
+  .icon-btn:active{transform:scale(0.96);}
+  @media (max-width:480px){
+    .icon-btn{font-size:11.5px;width:32px;height:32px;}
+  }
+
+  .task-card{
+    border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px;background:#fdfdfc;
+  }
+  .task-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+  .task-name{font-weight:600;font-size:13.5px;}
+  .task-meta{font-size:11.5px;color:var(--muted);margin-top:2px;}
+  .task-notes{font-size:11.5px;color:var(--text);margin-top:6px;background:#f7f7f5;border-radius:4px;padding:6px 8px;}
+  .badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:10.5px;margin-right:4px;background:var(--accent-soft);color:var(--accent-dark);}
+  .badge.status-organizar{background:#fce8e6;color:#c5221f;}
+  .badge.status-sin-iniciar{background:#e8f0fe;color:#1967d2;}
+  .badge.status-ejecucion{background:#fef7e0;color:#a35b00;}
+  .badge.status-pendiente{background:#f3e8fd;color:#7c3aed;}
+  .badge.status-terminada{background:var(--accent-soft);color:var(--accent-dark);}
+  .task-card.status-organizar{border-left:3px solid #c5221f;}
+  .task-card.status-sin-iniciar{border-left:3px solid #4285F4;}
+  .task-card.status-ejecucion{border-left:3px solid #FBBC05;}
+  .task-card.status-pendiente{border-left:3px solid #7c3aed;}
+
+  .empty{color:var(--muted);font-size:12.5px;padding:10px 0;}
+
+  .area-block{margin-bottom:22px;}
+  .hoy-grid{display:grid;grid-template-columns:1fr;gap:16px;}
+  @media (min-width:700px){ .hoy-grid{grid-template-columns:repeat(2,1fr);} }
+  @media (min-width:1000px){ .hoy-grid{grid-template-columns:repeat(4,1fr);} }
+  .hoy-grid .area-block{margin-bottom:0;min-width:0;}
+  .area-title{font-size:15px;font-weight:700;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid var(--accent);}
+  .section-title{font-size:12px;font-weight:700;margin:14px 0 6px 0;color:#fff;background:var(--accent);display:inline-block;padding:2px 8px;border-radius:4px;}
+  .cat-title{font-size:11.5px;color:var(--muted);margin:8px 0 4px 0;}
+
+  .edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;}
+  .edit-grid label{margin-top:0;}
+  .edit-grid .full{grid-column:1/-1;}
+
+  .status-msg{font-size:12px;color:var(--muted);margin-bottom:8px;}
+  select.mini{padding:4px 6px;font-size:12px;}
+
+  .quick-add-row{display:flex;gap:8px;align-items:flex-end;}
+  .quick-add-row textarea{flex:1;min-height:44px;max-height:160px;resize:vertical;}
+  .send-btn{
+    flex:0 0 auto;width:44px;height:44px;border-radius:50%;border:none;
+    background:var(--accent);color:#fff;font-size:18px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;line-height:1;
+  }
+  .send-btn:active{opacity:.85;}
+
+  .combobox{position:relative;}
+  .combobox input{padding-right:30px;background:#fff;}
+  .combobox::after{
+    content:"▾";position:absolute;right:10px;top:50%;transform:translateY(-50%);
+    color:var(--muted);pointer-events:none;font-size:12px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Gestor de tareas de Nico Llano</h1>
+  <nav id="tabs"></nav>
+  <nav id="tabs-secondary" class="nav-secondary"></nav>
+  <div id="content"></div>
+</div>
+
+<script>
+const AREAS = ['Personales','UTadeo','CDTIC','CNA'];
+const AREA_LABEL = {Personales:'Personales', UTadeo:'UTadeo', CDTIC:'Alcaldía (CDTIC)', CNA:'CNA'};
+const PRIORITIES = ['Alta','Media','Baja'];
+const EFFORTS = ['Alto','Medio','Bajo'];
+const ENERGIES = ['Alta','Baja'];
+const STATUSES = ['Por organizar','Sin iniciar','En ejecución','Pendiente','Terminada'];
+
+const CATEGORY_MAP = {
+  'Alta|Bajo|Alta':   {section:'HOY - HACERLAS YA', order:1},
+  'Alta|Bajo|Baja':   {section:'HOY - HACERLAS YA', order:2},
+  'Alta|Alto|Alta':   {section:'HOY - DURANTE EL DÍA', order:3},
+  'Alta|Alto|Baja':   {section:'PROGRAMAR', order:4},
+  'Alta|Medio|Alta':  {section:'PROGRAMAR', order:5},
+  'Alta|Medio|Baja':  {section:'PROGRAMAR', order:6},
+  'Media|Medio|Alta': {section:'PROGRAMAR', order:7},
+  'Media|Medio|Baja': {section:'PROGRAMAR', order:8},
+  'Media|Alto|Alta':  {section:'PROGRAMAR', order:9},
+  'Media|Alto|Baja':  {section:'PROGRAMAR', order:10},
+  'Media|Bajo|Alta':  {section:'PROGRAMAR', order:11},
+  'Baja|Bajo|Alta':   {section:'PROGRAMAR', order:12},
+  'Baja|Alto|Alta':   {section:'EN ESPERA', order:13},
+  'Baja|Alto|Baja':   {section:'EN ESPERA', order:14},
+  'Baja|Medio|Alta':  {section:'EN ESPERA', order:15},
+  'Baja|Medio|Baja':  {section:'EN ESPERA', order:16},
+  'Media|Bajo|Baja':  {section:'EN CAMINO', order:17},
+  'Baja|Bajo|Baja':   {section:'EN CAMINO', order:18},
+};
+const SECTION_ORDER = ['HOY - HACERLAS YA','HOY - DURANTE EL DÍA','PROGRAMAR','EN ESPERA','EN CAMINO'];
+
+function getCategory(p,e,en){
+  if(!p||!e||!en) return null;
+  return CATEGORY_MAP[p+'|'+e+'|'+en] || null;
+}
+function todayStr(){
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function tomorrowStr(){
+  const d = new Date();
+  d.setDate(d.getDate()+1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function uid(){ return 't_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); }
+function setToday(inputId){
+  const el = document.getElementById(inputId);
+  if(el) el.value = todayStr();
+}
+window.setToday = setToday;
+
+const SECTION_DEFAULTS = {
+  'HOY - HACERLAS YA': {priority:'Alta', effort:'Bajo', energy:'Alta'},
+  'HOY - DURANTE EL DÍA': {priority:'Alta', effort:'Alto', energy:'Alta'},
+  'PROGRAMAR': {priority:'Alta', effort:'Alto', energy:'Baja'},
+  'EN ESPERA': {priority:'Baja', effort:'Alto', energy:'Alta'},
+  'EN CAMINO': {priority:'Media', effort:'Bajo', energy:'Baja'},
+};
+function applySectionDefault(section){
+  const d = SECTION_DEFAULTS[section];
+  if(!d) return;
+  const pEl = document.getElementById('d_priority');
+  const eEl = document.getElementById('d_effort');
+  const nEl = document.getElementById('d_energy');
+  if(pEl) pEl.value = d.priority;
+  if(eEl) eEl.value = d.effort;
+  if(nEl) nEl.value = d.energy;
+}
+window.applySectionDefault = applySectionDefault;
+function blankTask(){
+  return {id:null, name:'', area:null, date:null, priority:null, effort:null, energy:null, project:null, notes:'', status:'Por organizar', completedDate:null, createdAt:null};
+}
+
+const ICONS = {
+  edit: '✏️',
+  check: '✅',
+  trash: '🗑️',
+  save: '💾',
+  x: '↩️',
+  list: '📋',
+  postpone: '⏭️',
+  view: '👁️',
+};
+function iconAction(cls, icon, label, dataAttr){
+  return `<button type="button" class="icon-btn" ${dataAttr} title="${label}" aria-label="${label}">${ICONS[icon]}</button>`;
+}
+
+let tasks = [];
+let projects = [];
+let currentTab = 'crear';
+let editingTaskId = null;
+let pendingDeleteId = null;
+let matrixAreaFilter = null;
+let expandedProjectId = null;
+let editingProjectId = null;
+let pendingProjectDeleteId = null;
+let expandedSection = null;
+let viewingTaskId = null;
+let pendingImportText = '';
+let importConfirmPending = false;
+let importWarnings = [];
+
+// ======================================================
+// CONFIGURACIÓN DE SUPABASE — pega aquí tus datos
+// (Project Settings → API en tu proyecto de Supabase)
+// ======================================================
+const SUPABASE_URL = 'https://wfzmpdcxyuskfyjnwmme.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_KGfozOeJvj6vJBzHOTnWVg_wezXkWsH';
+const supabaseClient = (SUPABASE_URL.startsWith('http'))
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+async function loadData(){
+  if(!supabaseClient){
+    alert('Falta configurar Supabase: edita SUPABASE_URL y SUPABASE_ANON_KEY en el código.');
+    tasks = []; projects = [];
+    return;
+  }
+  try{
+    const { data, error } = await supabaseClient.from('kv_store').select('value').eq('key','tasks').maybeSingle();
+    if(error) throw error;
+    tasks = data ? data.value : [];
+  }catch(e){ console.error('Error cargando tareas', e); tasks = []; }
+  try{
+    const { data, error } = await supabaseClient.from('kv_store').select('value').eq('key','projects').maybeSingle();
+    if(error) throw error;
+    projects = data ? data.value : [];
+  }catch(e){ console.error('Error cargando proyectos', e); projects = []; }
+}
+async function saveTasks(){
+  if(!supabaseClient) return;
+  try{
+    const { error } = await supabaseClient.from('kv_store').upsert({ key:'tasks', value: tasks });
+    if(error) throw error;
+  }catch(e){ console.error('Error guardando tareas', e); alert('No se pudo guardar. Intenta de nuevo.'); }
+}
+async function saveProjects(){
+  if(!supabaseClient) return;
+  try{
+    const { error } = await supabaseClient.from('kv_store').upsert({ key:'projects', value: projects });
+    if(error) throw error;
+  }catch(e){ console.error('Error guardando proyectos', e); }
+}
+
+function reprogramOverdue(){
+  const today = todayStr();
+  let changed = false;
+  tasks.forEach(t=>{
+    if((t.status==='Sin iniciar' || t.status==='En ejecución' || t.status==='Pendiente') && t.date && t.date < today){
+      t.date = today;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+function getOrCreateProject(name, area){
+  name = name.trim();
+  if(!name) return null;
+  let existing = projects.find(p=>p.name.toLowerCase()===name.toLowerCase());
+  if(existing) return existing;
+  const p = {id:uid(), name, area:area||null};
+  projects.push(p);
+  return p;
+}
+function projectsByArea(area){
+  return projects.filter(p=>p.area===area).sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'}));
+}
+
+// ---------- Tabs ----------
+function renderTabs(){
+  const primary = [
+    ['crear','➕ Crear tarea'],
+    ['organizar','📥 Organizar tareas'],
+    ['hoy','📅 HOY'],
+    ['proyectos','📁 Proyectos y tareas'],
+  ];
+  const secondary = [
+    ['datos','📊 Datos'],
+  ];
+  const pendCount = tasks.filter(t=>t.status==='Por organizar').length;
+
+  const nav = document.getElementById('tabs');
+  nav.innerHTML = '';
+  primary.forEach(([key,label])=>{
+    const b = document.createElement('button');
+    b.textContent = label;
+    if(key===currentTab) b.className='active';
+    b.onclick = ()=>{ currentTab=key; editingTaskId=null; pendingDeleteId=null; render(); };
+    if(key==='organizar' && pendCount>0){
+      const badge = document.createElement('span');
+      badge.className = 'notif-badge';
+      badge.textContent = pendCount>99 ? '99+' : String(pendCount);
+      b.appendChild(badge);
+    }
+    nav.appendChild(b);
+  });
+
+  const navSec = document.getElementById('tabs-secondary');
+  navSec.innerHTML = '';
+  if(currentTab !== 'crear'){
+    secondary.forEach(([key,label])=>{
+      const b = document.createElement('button');
+      b.textContent = label;
+      if(key===currentTab) b.className='active';
+      b.onclick = ()=>{ currentTab=key; editingTaskId=null; pendingDeleteId=null; render(); };
+      navSec.appendChild(b);
+    });
+  }
+}
+
+function render(){
+  renderTabs();
+  const c = document.getElementById('content');
+  if(currentTab==='crear') c.innerHTML = viewCrear();
+  else if(currentTab==='organizar') c.innerHTML = viewOrganizar();
+  else if(currentTab==='hoy') c.innerHTML = viewHoy();
+  else if(currentTab==='matriz-area') c.innerHTML = viewMatrizArea();
+  else if(currentTab==='matriz-general') c.innerHTML = viewMatrizGeneral();
+  else if(currentTab==='completadas') c.innerHTML = viewCompletadas();
+  else if(currentTab==='proyectos') c.innerHTML = viewProyectos();
+  else if(currentTab==='datos') c.innerHTML = viewDatos();
+  bindEvents();
+}
+
+// ---------- Botones de eliminar con confirmación en página ----------
+function deleteButtonsHtml(id){
+  if(pendingDeleteId === id){
+    return iconAction('complete','check','Confirmar', `data-confirm-delete="${id}"`) + iconAction('cancel','x','Cancelar', `data-cancel-delete="1"`);
+  }
+  return iconAction('delete','trash','Eliminar', `data-delete-matrix="${id}"`);
+}
+
+// ---------- Interfaz Crear ----------
+function viewCrear(){
+  return `
+  <div class="panel">
+    <h2>Crear tarea</h2>
+    <div class="status-msg">Escribe una tarea y presiona Enter, o pega una lista con varias tareas (una por línea) — cada línea se crea como una tarea separada. Se crean con estado "Por organizar" en el área elegida; el resto de los campos se completan luego en "Organizar tareas".</div>
+    ${AREAS.map(area=>`
+      <label style="font-weight:700;font-size:15px;">${AREA_LABEL[area]}</label>
+      <div class="quick-add-row">
+        <textarea id="c_name_${area}" rows="1" placeholder="Escribe o pega una o varias tareas (una por línea)" autocomplete="off"></textarea>
+        <button type="button" class="send-btn" data-crear-area="${area}" aria-label="Crear tarea en ${AREA_LABEL[area]}">➤</button>
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+// ---------- Interfaz Organizar ----------
+function viewOrganizar(){
+  const pend = tasks.filter(t=>t.status==='Por organizar').sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
+
+  if(editingTaskId === '__new__'){
+    return viewOrganizarDetalle(blankTask(), true);
+  }
+  if(editingTaskId){
+    const t = tasks.find(x=>x.id===editingTaskId);
+    if(t) return viewOrganizarDetalle(t, false);
+  }
+
+  return `
+  <div class="panel">
+    <button class="primary" data-new-organize="1" style="width:100%;">+ Crear tarea completa</button>
+  </div>
+  <div class="panel">
+    <h2>Organizar tareas (${pend.length})</h2>
+    ${pend.length===0?'<div class="empty">No hay tareas pendientes de organizar.</div>':''}
+    ${pend.map(t=>{
+      const confirmingDelete = pendingDeleteId === t.id;
+      const actions = confirmingDelete
+        ? iconAction('complete','check','Confirmar', `data-confirm-delete="${t.id}"`) + iconAction('cancel','x','Cancelar', `data-cancel-delete="1"`)
+        : iconAction('edit','edit','Detalle', `data-organize="${t.id}"`) + iconAction('delete','trash','Eliminar', `data-delete-matrix="${t.id}"`);
+      return `
+      <div class="task-card status-organizar">
+        <div class="task-top">
+          <div>
+            <div class="task-name">${escapeHtml(t.name)}</div>
+            <div class="task-meta"><span class="badge status-organizar">Por organizar</span>${t.area?AREA_LABEL[t.area]:'sin área'}</div>
+          </div>
+          <div class="icon-actions">${actions}</div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+function viewOrganizarDetalle(t, isNew){
+  const idAttr = t.id || '__new__';
+  return `
+  <div class="panel">
+    <h2>${isNew ? 'Crear tarea completa' : 'Definir detalle: '+escapeHtml(t.name)}</h2>
+    <div class="status-msg">Todos los campos son obligatorios, excepto Proyecto y Observaciones. ${isNew ? 'La tarea se crea directamente como "Sin iniciar".' : 'Al guardar, la tarea pasa a "Sin iniciar".'}</div>
+    <label>Nombre</label>
+    <input type="text" id="d_name" value="${escapeAttr(t.name||'')}">
+    <div class="row">
+      <div>
+        <label>Área</label>
+        <select id="d_area">
+          <option value="">— sin definir —</option>
+          ${AREAS.map(a=>`<option value="${a}" ${t.area===a?'selected':''}>${AREA_LABEL[a]}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label>Fecha</label>
+        <div class="field-with-btn">
+          <div><input type="date" id="d_date" value="${t.date||''}"></div>
+          <button type="button" class="secondary" onclick="setToday('d_date')">Hoy</button>
+        </div>
+      </div>
+    </div>
+    <label>Asignación rápida (opcional)</label>
+    <div class="status-msg" style="margin-bottom:6px;">Elige a qué grupo debe ir esta tarea y se completan Prioridad, Esfuerzo y Energía por ti. Puedes ajustarlos después si no calzan exacto.</div>
+    <div class="icon-actions" style="margin-bottom:10px;">
+      <button type="button" class="icon-btn" title="HOY - Hacerlas ya" aria-label="HOY - Hacerlas ya" onclick="applySectionDefault('HOY - HACERLAS YA')">🔥</button>
+      <button type="button" class="icon-btn" title="HOY - Durante el día" aria-label="HOY - Durante el día" onclick="applySectionDefault('HOY - DURANTE EL DÍA')">☀️</button>
+      <button type="button" class="icon-btn" title="Programar" aria-label="Programar" onclick="applySectionDefault('PROGRAMAR')">📅</button>
+      <button type="button" class="icon-btn" title="Pendiente" aria-label="Pendiente" onclick="applySectionDefault('EN ESPERA')">⏳</button>
+      <button type="button" class="icon-btn" title="En camino" aria-label="En camino" onclick="applySectionDefault('EN CAMINO')">🚌</button>
+    </div>
+    <div class="row">
+      <div>
+        <label>Prioridad</label>
+        <select id="d_priority"><option value="">—</option>${PRIORITIES.map(p=>`<option ${t.priority===p?'selected':''}>${p}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label>Esfuerzo</label>
+        <select id="d_effort"><option value="">—</option>${EFFORTS.map(p=>`<option ${t.effort===p?'selected':''}>${p}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label>Energía</label>
+        <select id="d_energy"><option value="">—</option>${ENERGIES.map(p=>`<option ${t.energy===p?'selected':''}>${p}</option>`).join('')}</select>
+      </div>
+    </div>
+    <label>Proyecto (opcional)</label>
+    <div class="combobox">
+      <input type="text" id="d_project" list="project_list2" value="${escapeAttr(t.project||'')}" placeholder="Selecciona o escribe un proyecto" autocomplete="off">
+    </div>
+    <datalist id="project_list2">${projects.map(p=>`<option value="${p.name}">`).join('')}</datalist>
+    <label>Observaciones (opcional)</label>
+    <textarea id="d_notes" rows="3" placeholder="Notas adicionales para esta actividad">${escapeHtml(t.notes||'')}</textarea>
+    <div class="task-actions">
+      <button class="primary" data-save-organize="${idAttr}">${isNew?'Crear tarea':'Guardar y mover a "Sin iniciar"'}</button>
+      <button class="secondary" data-cancel-organize="1">Cancelar</button>
+    </div>
+  </div>`;
+}
+
+// ---------- Interfaz HOY ----------
+function viewHoy(){
+  const today = todayStr();
+  let html = `<div class="panel"><h2>HOY (${today})</h2><div class="status-msg">Solo tareas programadas para hoy. Orden: 1) En ejecución, 2) Pendientes, 3) Sin iniciar.</div></div>`;
+  let anyToday = false;
+  let grid = '';
+  AREAS.forEach(area=>{
+    const areaTasks = tasks.filter(t=>t.area===area && t.date===today && (t.status==='Sin iniciar'||t.status==='En ejecución'||t.status==='Pendiente'));
+    if(areaTasks.length===0) return;
+    anyToday = true;
+    grid += `<div class="area-block"><div class="area-title">${AREA_LABEL[area]}</div>`;
+
+    const uncategorized = areaTasks.filter(t=>!getCategory(t.priority,t.effort,t.energy));
+    if(uncategorized.length){
+      grid += `<div class="cat-title">Sin categorizar (falta prioridad, esfuerzo o energía)</div>`;
+      grid += renderTaskList(sortTasks(uncategorized), false, true, false, true);
+    }
+
+    SECTION_ORDER.forEach(section=>{
+      const catsInSection = Object.entries(CATEGORY_MAP).filter(([k,v])=>v.section===section).sort((a,b)=>a[1].order-b[1].order);
+      let sectionTasksTotal = [];
+      catsInSection.forEach(([key])=>{
+        const [p,e,en] = key.split('|');
+        sectionTasksTotal = sectionTasksTotal.concat(areaTasks.filter(t=>t.priority===p&&t.effort===e&&t.energy===en));
+      });
+      if(sectionTasksTotal.length===0) return;
+      grid += `<div class="section-title">${section}</div>`;
+      catsInSection.forEach(([key])=>{
+        const [p,e,en] = key.split('|');
+        const catTasks = sortTasks(areaTasks.filter(t=>t.priority===p&&t.effort===e&&t.energy===en));
+        if(catTasks.length===0) return;
+        grid += `<div class="cat-title">${p} prioridad · ${e} esfuerzo · ${en} energía</div>`;
+        grid += renderTaskList(catTasks, false, true, false, true);
+      });
+    });
+    grid += `</div>`;
+  });
+  if(!anyToday) html += `<div class="panel"><div class="empty">No tienes tareas programadas para hoy.</div></div>`;
+  else html += `<div class="hoy-grid">${grid}</div>`;
+  return html;
+}
+
+// ---------- Interfaz Tareas por tema (matriz por área) ----------
+function viewMatrizArea(){
+  let html = `<div class="panel"><h2>Tareas por tema</h2><div class="status-msg">En cada categoría: primero tareas "En ejecución", luego "Sin iniciar" — ordenadas por fecha más próxima primero.</div></div>`;
+  AREAS.forEach(area=>{
+    const areaTasks = tasks.filter(t=>t.area===area && (t.status==='Sin iniciar'||t.status==='En ejecución'||t.status==='Pendiente'));
+    html += `<div class="area-block"><div class="area-title">${AREA_LABEL[area]}</div>`;
+
+    const uncategorized = areaTasks.filter(t=>!getCategory(t.priority,t.effort,t.energy));
+    if(uncategorized.length){
+      html += `<div class="cat-title">Sin categorizar (falta prioridad, esfuerzo o energía)</div>`;
+      html += renderTaskList(sortTasks(uncategorized));
+    }
+
+    SECTION_ORDER.forEach(section=>{
+      const catsInSection = Object.entries(CATEGORY_MAP).filter(([k,v])=>v.section===section).sort((a,b)=>a[1].order-b[1].order);
+      let sectionTasksTotal = [];
+      catsInSection.forEach(([key])=>{
+        const [p,e,en] = key.split('|');
+        const catTasks = areaTasks.filter(t=>t.priority===p&&t.effort===e&&t.energy===en);
+        sectionTasksTotal = sectionTasksTotal.concat(catTasks);
+      });
+      if(sectionTasksTotal.length===0 && section!=='EN CAMINO') return;
+      html += `<div class="section-title">${section}</div>`;
+      if(sectionTasksTotal.length===0){
+        html += `<div class="empty">Sin tareas en esta sección.</div>`;
+      } else {
+        catsInSection.forEach(([key])=>{
+          const [p,e,en] = key.split('|');
+          const catTasks = sortTasks(areaTasks.filter(t=>t.priority===p&&t.effort===e&&t.energy===en));
+          if(catTasks.length===0) return;
+          html += `<div class="cat-title">${p} prioridad · ${e} esfuerzo · ${en} energía</div>`;
+          html += renderTaskList(catTasks);
+        });
+      }
+    });
+    html += `</div>`;
+  });
+  return html;
+}
+
+// ---------- Interfaz Todas las tareas (matriz general) ----------
+function viewMatrizGeneral(){
+  let html = `<div class="panel"><h2>Todas las tareas</h2><div class="status-msg">Todas las áreas juntas, en las mismas categorías, ordenadas solo por fecha (más próxima primero).</div></div>`;
+  const allTasks = tasks.filter(t=>t.status==='Sin iniciar'||t.status==='En ejecución'||t.status==='Pendiente');
+
+  const uncategorized = allTasks.filter(t=>!getCategory(t.priority,t.effort,t.energy));
+  if(uncategorized.length){
+    html += `<div class="cat-title">Sin categorizar (falta prioridad, esfuerzo o energía)</div>`;
+    html += renderTaskList(sortByDateOnly(uncategorized), true);
+  }
+
+  SECTION_ORDER.forEach(section=>{
+    const catsInSection = Object.entries(CATEGORY_MAP).filter(([k,v])=>v.section===section).sort((a,b)=>a[1].order-b[1].order);
+    let sectionTasksTotal = [];
+    catsInSection.forEach(([key])=>{
+      const [p,e,en] = key.split('|');
+      sectionTasksTotal = sectionTasksTotal.concat(allTasks.filter(t=>t.priority===p&&t.effort===e&&t.energy===en));
+    });
+    if(sectionTasksTotal.length===0 && section!=='EN CAMINO') return;
+    html += `<div class="section-title">${section}</div>`;
+    if(sectionTasksTotal.length===0){
+      html += `<div class="empty">Sin tareas en esta sección.</div>`;
+    } else {
+      catsInSection.forEach(([key])=>{
+        const [p,e,en] = key.split('|');
+        const catTasks = sortByDateOnly(allTasks.filter(t=>t.priority===p&&t.effort===e&&t.energy===en));
+        if(catTasks.length===0) return;
+        html += `<div class="cat-title">${p} prioridad · ${e} esfuerzo · ${en} energía</div>`;
+        html += renderTaskList(catTasks, true);
+      });
+    }
+  });
+  return html;
+}
+function sortByDateOnly(list){
+  return list.slice().sort((a,b)=>{
+    const da = a.date||'9999-99-99', db = b.date||'9999-99-99';
+    return da.localeCompare(db);
+  });
+}
+function sortTasks(list){
+  return list.slice().sort((a,b)=>{
+    const statusRank = s => s==='En ejecución'?0 : s==='Pendiente'?1 : 2;
+    const r = statusRank(a.status)-statusRank(b.status);
+    if(r!==0) return r;
+    const da = a.date||'9999-99-99', db = b.date||'9999-99-99';
+    return da.localeCompare(db);
+  });
+}
+function statusClass(status){
+  if(status==='Por organizar') return 'status-organizar';
+  if(status==='Sin iniciar') return 'status-sin-iniciar';
+  if(status==='En ejecución') return 'status-ejecucion';
+  if(status==='Pendiente') return 'status-pendiente';
+  if(status==='Terminada') return 'status-terminada';
+  return '';
+}
+function renderTaskList(list, showArea, showPostpone, showNotes, showView){
+  return list.map(t=>renderTaskCard(t, showArea, showPostpone, showNotes, showView)).join('');
+}
+function renderTaskCard(t, showArea, showPostpone, showNotes, showView){
+  const editing = editingTaskId===('m_'+t.id);
+  if(editing) return renderTaskEditCard(t);
+  if(viewingTaskId === t.id) return renderTaskViewCard(t);
+  const confirmingDelete = pendingDeleteId === t.id;
+  const canComplete = (t.status==='Sin iniciar' || t.status==='En ejecución' || t.status==='Pendiente');
+  const actions = confirmingDelete
+    ? iconAction('complete','check','Confirmar', `data-confirm-delete="${t.id}"`) + iconAction('cancel','x','Cancelar', `data-cancel-delete="1"`)
+    : (showView?iconAction('view','view','Ver', `data-view-task="${t.id}"`):'') + iconAction('edit','edit','Editar', `data-edit-matrix="${t.id}"`) + (canComplete?iconAction('complete','check','Completar', `data-complete-matrix="${t.id}"`):'') + (showPostpone?iconAction('postpone','postpone','Aplazar para mañana', `data-postpone="${t.id}"`):'') + iconAction('delete','trash','Eliminar', `data-delete-matrix="${t.id}"`);
+  return `
+  <div class="task-card ${statusClass(t.status)}">
+    <div class="task-top">
+      <div>
+        <div class="task-name">${escapeHtml(t.name)}</div>
+        <div class="task-meta">
+          <span class="badge ${statusClass(t.status)}">${t.status}</span>
+          ${showArea && t.area?`<span class="badge">${AREA_LABEL[t.area]}</span>`:''}
+          ${t.date?`<span>${t.date}</span>`:''}
+          ${t.project?` · ${escapeHtml(t.project)}`:''}
+        </div>
+        ${(showNotes!==false && t.notes)?`<div class="task-notes">${escapeHtml(t.notes)}</div>`:''}
+      </div>
+      <div class="icon-actions">${actions}</div>
+    </div>
+  </div>`;
+}
+function renderTaskViewCard(t){
+  const peParts = [];
+  if(t.priority) peParts.push('Prioridad: '+t.priority);
+  if(t.effort) peParts.push('Esfuerzo: '+t.effort);
+  if(t.energy) peParts.push('Energía: '+t.energy);
+  return `
+  <div class="task-card ${statusClass(t.status)}">
+    <div class="task-top">
+      <div>
+        <div class="task-name">${escapeHtml(t.name)}</div>
+        <div class="task-meta">
+          <span class="badge ${statusClass(t.status)}">${t.status}</span>
+          ${t.area?`<span class="badge">${AREA_LABEL[t.area]}</span>`:''}
+          ${t.date?`<span>${t.date}</span>`:''}
+        </div>
+      </div>
+      <div class="icon-actions">${iconAction('cancel','x','Cerrar', `data-close-view="1"`)}</div>
+    </div>
+    ${peParts.length?`<div class="task-meta" style="margin-top:6px;">${peParts.join(' · ')}</div>`:''}
+    ${t.project?`<div class="task-meta" style="margin-top:2px;">Proyecto: ${escapeHtml(t.project)}</div>`:''}
+    ${t.notes?`<div class="task-notes" style="margin-top:8px;">${escapeHtml(t.notes)}</div>`:`<div class="empty" style="padding:6px 0 0;">Sin observaciones.</div>`}
+  </div>`;
+}
+function renderTaskEditCard(t){
+  return `
+  <div class="task-card ${statusClass(t.status)}">
+    <label>Nombre</label>
+    <input type="text" id="m_name_${t.id}" value="${escapeAttr(t.name)}">
+    <div class="edit-grid">
+      <div>
+        <label>Fecha</label>
+        <input type="date" id="m_date_${t.id}" value="${t.date||''}">
+      </div>
+      <div>
+        <label>Proyecto</label>
+        <div class="combobox">
+          <input type="text" id="m_project_${t.id}" list="project_list3" value="${escapeAttr(t.project||'')}" placeholder="Selecciona o escribe un proyecto" autocomplete="off">
+        </div>
+      </div>
+      <div>
+        <label>Prioridad</label>
+        <select id="m_priority_${t.id}"><option value="">—</option>${PRIORITIES.map(p=>`<option ${t.priority===p?'selected':''}>${p}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label>Esfuerzo</label>
+        <select id="m_effort_${t.id}"><option value="">—</option>${EFFORTS.map(p=>`<option ${t.effort===p?'selected':''}>${p}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label>Energía</label>
+        <select id="m_energy_${t.id}"><option value="">—</option>${ENERGIES.map(p=>`<option ${t.energy===p?'selected':''}>${p}</option>`).join('')}</select>
+      </div>
+      <div>
+        <label>Estado</label>
+        <select id="m_status_${t.id}" class="mini">
+          ${['Sin iniciar','En ejecución','Pendiente'].map(s=>`<option ${t.status===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div class="full">
+        <label>Observaciones</label>
+        <textarea id="m_notes_${t.id}" rows="2" placeholder="Notas adicionales">${escapeHtml(t.notes||'')}</textarea>
+      </div>
+    </div>
+    <datalist id="project_list3">${projects.map(p=>`<option value="${p.name}">`).join('')}</datalist>
+    <div class="icon-actions" style="margin-top:12px;">
+      ${iconAction('save','save','Guardar', `data-save-matrix="${t.id}"`)}
+      ${iconAction('complete','check','Terminada', `data-complete-matrix="${t.id}"`)}
+      ${deleteButtonsHtml(t.id)}
+      ${iconAction('cancel','x','Cancelar', `data-cancel-matrix="1"`)}
+    </div>
+  </div>`;
+}
+
+// ---------- Interfaz ¡Lo hice! (completadas) ----------
+function viewCompletadas(){
+  const filter = matrixAreaFilter;
+  let html = `<div class="panel"><h2>¡Lo hice!</h2>
+  <label>Filtrar por área</label>
+  <select id="comp_area_filter">
+    <option value="">Todas las áreas</option>
+    ${AREAS.map(a=>`<option value="${a}" ${filter===a?'selected':''}>${AREA_LABEL[a]}</option>`).join('')}
+  </select>
+  </div>`;
+  const areasToShow = filter ? [filter] : AREAS;
+  areasToShow.forEach(area=>{
+    const done = tasks.filter(t=>t.status==='Terminada' && t.area===area)
+      .sort((a,b)=> (b.completedDate||'').localeCompare(a.completedDate||''));
+    html += `<div class="area-block"><div class="area-title">${AREA_LABEL[area]}</div>`;
+    if(done.length===0) html += `<div class="empty">Sin tareas completadas.</div>`;
+    else html += done.map(t=>`
+      <div class="task-card">
+        <div class="task-name">${escapeHtml(t.name)}</div>
+        <div class="task-meta">Completada: ${t.completedDate||'—'}${t.project?(' · '+escapeHtml(t.project)):''}</div>
+        ${t.notes?`<div class="task-notes">${escapeHtml(t.notes)}</div>`:''}
+      </div>`).join('');
+    html += `</div>`;
+  });
+  return html;
+}
+
+// ---------- Interfaz Proyectos ----------
+function viewProyectos(){
+  let html = `<div class="panel"><h2>Proyectos y tareas</h2><div class="status-msg">Toca un proyecto para ver y editar sus actividades.</div></div>`;
+  AREAS.forEach(area=>{
+    const ps = projectsByArea(area);
+    html += `<div class="area-block"><div class="area-title">${AREA_LABEL[area]}</div>`;
+    if(ps.length===0){ html += `<div class="empty">Sin proyectos en esta área.</div>`; }
+    else{
+      ps.forEach(p=>{
+        const tks = tasks.filter(t=>t.project===p.name);
+        const doneCount = tks.filter(t=>t.status==='Terminada').length;
+        const isOpen = expandedProjectId===p.id;
+        const isEditing = editingProjectId===p.id;
+        const isConfirmingDelete = pendingProjectDeleteId===p.id;
+
+        let headerActions;
+        if(isEditing){
+          headerActions = iconAction('save','save','Guardar', `data-save-project="${p.id}"`) + iconAction('cancel','x','Cancelar', `data-cancel-edit-project="1"`);
+        } else if(isConfirmingDelete){
+          headerActions = iconAction('complete','check','Confirmar', `data-confirm-delete-project="${p.id}"`) + iconAction('cancel','x','Cancelar', `data-cancel-delete-project="1"`);
+        } else {
+          headerActions = iconAction('edit','edit','Renombrar', `data-edit-project="${p.id}"`);
+          if(tks.length===0){
+            headerActions += iconAction('delete','trash','Eliminar', `data-delete-project="${p.id}"`);
+          }
+          headerActions += iconAction('list','list', isOpen?'Ocultar':'Actividades', `data-toggle-project="${p.id}"`);
+        }
+
+        html += `<div class="task-card">
+          <div class="task-top">
+            <div style="flex:1;">
+              ${isEditing
+                ? `<input type="text" id="proj_name_${p.id}" value="${escapeAttr(p.name)}" style="margin-top:0;">
+                   <select id="proj_area_${p.id}" style="margin-top:6px;">
+                     ${AREAS.map(a=>`<option value="${a}" ${p.area===a?'selected':''}>${AREA_LABEL[a]}</option>`).join('')}
+                   </select>`
+                : `<div class="task-name">${escapeHtml(p.name)}</div>`}
+              <div class="task-meta">${tks.length} tarea(s) · ${doneCount} completada(s)${tks.length===0?' · sin actividades':''}</div>
+            </div>
+          </div>
+          <div class="icon-actions" style="margin-top:8px;">${headerActions}</div>`;
+        if(isOpen){
+          html += `<div style="margin-top:10px;">`;
+          if(tks.length===0) html += `<div class="empty">Este proyecto todavía no tiene actividades.</div>`;
+          else html += tks.slice().sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999')).map(t=>renderTaskCard(t, false)).join('');
+          html += `</div>`;
+        }
+        html += `</div>`;
+      });
+    }
+    html += `</div>`;
+  });
+
+  const sections = [
+    ['tema','🗂️ Tareas por tema', viewMatrizArea],
+    ['todas','📋 Todas las tareas', viewMatrizGeneral],
+    ['hechas','✅ ¡Lo hice!', viewCompletadas],
+  ];
+  html += `<div class="panel"><h2>Más vistas</h2>`;
+  sections.forEach(([key,label,fn])=>{
+    const isOpen = expandedSection===key;
+    html += `<button class="secondary" data-toggle-section="${key}" style="width:100%;margin-bottom:6px;">${label} ${isOpen?'▲':'▼'}</button>`;
+  });
+  html += `</div>`;
+  sections.forEach(([key,label,fn])=>{
+    if(expandedSection===key){
+      html += fn();
+    }
+  });
+
+  return html;
+}
+
+// ---------- Interfaz Datos (exportar / importar) ----------
+const DATA_COLUMNS = ['Nombre','Área','Prioridad','Esfuerzo','Energía','Fecha','Estado','Proyecto','Observaciones','Fecha completada'];
+
+function viewDatos(){
+  const importRows = importConfirmPending ? countImportRows(pendingImportText) : 0;
+  return `
+  <div class="panel">
+    <h2>Exportar a Excel</h2>
+    <div class="status-msg">Descarga todas las tareas en un archivo .xlsx, en una sola hoja.</div>
+    <button class="primary" id="btn_export_excel" style="width:100%;">⬇️ Exportar a Excel</button>
+  </div>
+  <div class="panel">
+    <h2>Importar desde Excel</h2>
+    ${importConfirmPending ? `
+      <div class="status-msg">⚠️ Vas a reemplazar <strong>todas</strong> las tareas actuales por ${importRows} tarea(s) del texto pegado. Esta acción no se puede deshacer. ¿Confirmas?</div>
+      <div class="task-actions">
+        <button class="danger" data-confirm-import="1">Sí, reemplazar todo</button>
+        <button class="secondary" data-cancel-import="1">Cancelar</button>
+      </div>
+    ` : `
+      <div class="status-msg">⚠️ Importar reemplaza <strong>todas</strong> las tareas actuales por las de este archivo. Copia un rango de Excel que incluya como primera fila estos encabezados: ${DATA_COLUMNS.join(', ')}. Pégalo abajo y presiona Importar.</div>
+      <label>Pega aquí el rango copiado de Excel</label>
+      <textarea id="import_paste" rows="6" placeholder="Pega aquí (Ctrl+V) el rango copiado de Excel...">${escapeHtml(pendingImportText)}</textarea>
+      <button class="primary" id="btn_import_excel" style="width:100%;margin-top:10px;">⬆️ Importar tareas pegadas</button>
+    `}
+  </div>
+  ${importWarnings.length ? `
+  <div class="panel">
+    <h2>⚠️ Avisos de la última importación (${importWarnings.length})</h2>
+    <div class="status-msg">Estas filas no cumplían el formato esperado; se importaron igual, dejando el campo en blanco (o con el valor por defecto indicado).</div>
+    ${importWarnings.map(w=>`<div class="task-notes" style="margin-bottom:6px;">${escapeHtml(w)}</div>`).join('')}
+    <button class="secondary" data-dismiss-warnings="1" style="margin-top:8px;">Cerrar avisos</button>
+  </div>` : ''}`;
+}
+function countImportRows(raw){
+  const lines = (raw||'').split(/\r?\n/).filter(l=>l.trim().length>0);
+  return Math.max(0, lines.length - 1);
+}
+
+function exportExcel(){
+  if(typeof XLSX === 'undefined'){
+    alert('No se pudo cargar la librería de Excel. Verifica tu conexión a internet e intenta de nuevo.');
+    return;
+  }
+  const rows = tasks.map(t=>({
+    'Nombre': t.name||'',
+    'Área': t.area?AREA_LABEL[t.area]:'',
+    'Prioridad': t.priority||'',
+    'Esfuerzo': t.effort||'',
+    'Energía': t.energy||'',
+    'Fecha': t.date||'',
+    'Estado': t.status||'',
+    'Proyecto': t.project||'',
+    'Observaciones': t.notes||'',
+    'Fecha completada': t.completedDate||'',
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows, {header: DATA_COLUMNS});
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Tareas');
+  XLSX.writeFile(wb, 'tareas_'+todayStr()+'.xlsx');
+}
+
+function requestImport(){
+  const textarea = document.getElementById('import_paste');
+  const raw = textarea ? textarea.value : '';
+  if(!raw.trim()){ alert('Pega los datos copiados de Excel primero.'); return; }
+  pendingImportText = raw;
+  importConfirmPending = true;
+  render();
+}
+
+async function runImport(){
+  const raw = pendingImportText;
+  const lines = raw.split(/\r?\n/).filter(l=>l.trim().length>0);
+  if(lines.length<2){ alert('No se encontraron filas de datos debajo del encabezado.'); importConfirmPending=false; render(); return; }
+  const headers = lines[0].split('\t').map(h=>h.trim());
+  const newTasks = [];
+  const warnings = [];
+  for(let i=1;i<lines.length;i++){
+    const filaNum = i+1;
+    const cells = lines[i].split('\t');
+    const row = {};
+    headers.forEach((h,idx)=> row[h] = (cells[idx]||'').trim());
+    const name = row['Nombre'];
+    if(!name) continue;
+
+    const areaLabel = row['Área'];
+    let area = null;
+    if(areaLabel){
+      for(const k of AREAS){ if(AREA_LABEL[k]===areaLabel || k===areaLabel){ area=k; break; } }
+      if(!area) warnings.push(`Fila ${filaNum} ("${name}"): el área "${areaLabel}" no es válida. Debe ser una de: ${AREAS.map(a=>AREA_LABEL[a]).join(', ')}. Se dejó en blanco.`);
+    }
+
+    let priority = null;
+    if(row['Prioridad']){
+      priority = PRIORITIES.includes(row['Prioridad']) ? row['Prioridad'] : null;
+      if(!priority) warnings.push(`Fila ${filaNum} ("${name}"): la prioridad "${row['Prioridad']}" no es válida. Debe ser una de: ${PRIORITIES.join(', ')}. Se dejó en blanco.`);
+    }
+
+    let effort = null;
+    if(row['Esfuerzo']){
+      effort = EFFORTS.includes(row['Esfuerzo']) ? row['Esfuerzo'] : null;
+      if(!effort) warnings.push(`Fila ${filaNum} ("${name}"): el esfuerzo "${row['Esfuerzo']}" no es válido. Debe ser uno de: ${EFFORTS.join(', ')}. Se dejó en blanco.`);
+    }
+
+    let energy = null;
+    if(row['Energía']){
+      energy = ENERGIES.includes(row['Energía']) ? row['Energía'] : null;
+      if(!energy) warnings.push(`Fila ${filaNum} ("${name}"): la energía "${row['Energía']}" no es válida. Debe ser una de: ${ENERGIES.join(', ')}. Se dejó en blanco.`);
+    }
+
+    let date = null;
+    if(row['Fecha']){
+      date = /^\d{4}-\d{2}-\d{2}$/.test(row['Fecha']) ? row['Fecha'] : null;
+      if(!date) warnings.push(`Fila ${filaNum} ("${name}"): la fecha "${row['Fecha']}" no tiene el formato válido. Debe ser AAAA-MM-DD (ejemplo: 2026-07-21). Se dejó en blanco.`);
+    }
+
+    let status = 'Por organizar';
+    if(row['Estado']){
+      if(STATUSES.includes(row['Estado'])){
+        status = row['Estado'];
+      } else {
+        warnings.push(`Fila ${filaNum} ("${name}"): el estado "${row['Estado']}" no es válido. Debe ser uno de: ${STATUSES.join(', ')}. Se usó "Por organizar".`);
+      }
+    }
+
+    const notes = row['Observaciones'] || '';
+
+    let completedDate = null;
+    if(row['Fecha completada']){
+      completedDate = /^\d{4}-\d{2}-\d{2}$/.test(row['Fecha completada']) ? row['Fecha completada'] : null;
+      if(!completedDate) warnings.push(`Fila ${filaNum} ("${name}"): la fecha completada "${row['Fecha completada']}" no tiene el formato válido. Debe ser AAAA-MM-DD. Se dejó en blanco.`);
+    }
+
+    const projectName = row['Proyecto'];
+    let project = null;
+    if(projectName){
+      project = getOrCreateProject(projectName, area);
+      if(project.area) area = project.area;
+    }
+
+    newTasks.push({
+      id: uid(), name, area, priority, effort, energy, date, status,
+      project: project?project.name:null, notes, completedDate, createdAt: Date.now(),
+    });
+  }
+  tasks = newTasks;
+  await saveTasks();
+  await saveProjects();
+  pendingImportText = '';
+  importConfirmPending = false;
+  importWarnings = warnings;
+  render();
+  if(warnings.length===0){
+    alert(tasks.length + ' tarea(s) importada(s). Se reemplazaron todas las tareas anteriores.');
+  }
+}
+
+// ---------- Eventos ----------
+function bindEvents(){
+  document.querySelectorAll('[data-crear-area]').forEach(b=>{
+    const area = b.getAttribute('data-crear-area');
+    b.onclick = ()=>onCrearTarea(area);
+    const input = document.getElementById('c_name_'+area);
+    if(input){
+      input.onkeydown = (e)=>{
+        if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); onCrearTarea(area); }
+      };
+      input.oninput = ()=>{
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+      };
+    }
+  });
+
+  document.querySelectorAll('[data-new-organize]').forEach(b=>{
+    b.onclick = ()=>{ editingTaskId='__new__'; render(); };
+  });
+  document.querySelectorAll('[data-organize]').forEach(b=>{
+    b.onclick = ()=>{ editingTaskId = b.getAttribute('data-organize'); render(); };
+  });
+  document.querySelectorAll('[data-save-organize]').forEach(b=>{
+    b.onclick = ()=>onSaveOrganize(b.getAttribute('data-save-organize'));
+  });
+  document.querySelectorAll('[data-cancel-organize]').forEach(b=>{
+    b.onclick = ()=>{ editingTaskId=null; render(); };
+  });
+
+  document.querySelectorAll('[data-edit-matrix]').forEach(b=>{
+    b.onclick = ()=>{ editingTaskId = 'm_'+b.getAttribute('data-edit-matrix'); pendingDeleteId=null; render(); };
+  });
+  document.querySelectorAll('[data-cancel-matrix]').forEach(b=>{
+    b.onclick = ()=>{ editingTaskId=null; pendingDeleteId=null; render(); };
+  });
+  document.querySelectorAll('[data-save-matrix]').forEach(b=>{
+    b.onclick = ()=>onSaveMatrix(b.getAttribute('data-save-matrix'));
+  });
+  document.querySelectorAll('[data-complete-matrix]').forEach(b=>{
+    b.onclick = ()=>onCompleteMatrix(b.getAttribute('data-complete-matrix'));
+  });
+  document.querySelectorAll('[data-postpone]').forEach(b=>{
+    b.onclick = ()=>onPostponeTomorrow(b.getAttribute('data-postpone'));
+  });
+  document.querySelectorAll('[data-view-task]').forEach(b=>{
+    b.onclick = ()=>{ viewingTaskId = b.getAttribute('data-view-task'); render(); };
+  });
+  document.querySelectorAll('[data-close-view]').forEach(b=>{
+    b.onclick = ()=>{ viewingTaskId = null; render(); };
+  });
+
+  document.querySelectorAll('[data-delete-matrix]').forEach(b=>{
+    b.onclick = ()=>{ pendingDeleteId = b.getAttribute('data-delete-matrix'); render(); };
+  });
+  document.querySelectorAll('[data-confirm-delete]').forEach(b=>{
+    b.onclick = ()=>onDeleteMatrix(b.getAttribute('data-confirm-delete'));
+  });
+  document.querySelectorAll('[data-cancel-delete]').forEach(b=>{
+    b.onclick = ()=>{ pendingDeleteId=null; render(); };
+  });
+
+  document.querySelectorAll('[data-toggle-project]').forEach(b=>{
+    b.onclick = ()=>{
+      const pid = b.getAttribute('data-toggle-project');
+      expandedProjectId = (expandedProjectId===pid) ? null : pid;
+      editingTaskId = null;
+      pendingDeleteId = null;
+      render();
+    };
+  });
+  document.querySelectorAll('[data-toggle-section]').forEach(b=>{
+    b.onclick = ()=>{
+      const key = b.getAttribute('data-toggle-section');
+      expandedSection = (expandedSection===key) ? null : key;
+      render();
+    };
+  });
+  document.querySelectorAll('[data-edit-project]').forEach(b=>{
+    b.onclick = ()=>{ editingProjectId = b.getAttribute('data-edit-project'); pendingProjectDeleteId=null; render(); };
+  });
+  document.querySelectorAll('[data-cancel-edit-project]').forEach(b=>{
+    b.onclick = ()=>{ editingProjectId=null; render(); };
+  });
+  document.querySelectorAll('[data-save-project]').forEach(b=>{
+    b.onclick = ()=>onSaveProjectName(b.getAttribute('data-save-project'));
+  });
+  document.querySelectorAll('[data-delete-project]').forEach(b=>{
+    b.onclick = ()=>{ pendingProjectDeleteId = b.getAttribute('data-delete-project'); editingProjectId=null; render(); };
+  });
+  document.querySelectorAll('[data-cancel-delete-project]').forEach(b=>{
+    b.onclick = ()=>{ pendingProjectDeleteId=null; render(); };
+  });
+  document.querySelectorAll('[data-confirm-delete-project]').forEach(b=>{
+    b.onclick = ()=>onDeleteProject(b.getAttribute('data-confirm-delete-project'));
+  });
+
+  const compFilter = document.getElementById('comp_area_filter');
+  if(compFilter) compFilter.onchange = (e)=>{ matrixAreaFilter = e.target.value || null; render(); };
+
+  const btnExport = document.getElementById('btn_export_excel');
+  if(btnExport) btnExport.onclick = exportExcel;
+  const btnImport = document.getElementById('btn_import_excel');
+  if(btnImport) btnImport.onclick = requestImport;
+  const importPaste = document.getElementById('import_paste');
+  if(importPaste){
+    importPaste.onpaste = ()=>{
+      importPaste.value = '';
+    };
+  }
+  document.querySelectorAll('[data-confirm-import]').forEach(b=>{
+    b.onclick = ()=>runImport();
+  });
+  document.querySelectorAll('[data-cancel-import]').forEach(b=>{
+    b.onclick = ()=>{ importConfirmPending=false; render(); };
+  });
+  document.querySelectorAll('[data-dismiss-warnings]').forEach(b=>{
+    b.onclick = ()=>{ importWarnings=[]; render(); };
+  });
+}
+
+async function onCrearTarea(area){
+  const nameInput = document.getElementById('c_name_'+area);
+  const raw = nameInput.value;
+  const lines = raw.split(/\r?\n/).map(l=>l.trim()).filter(l=>l.length>0);
+  if(lines.length===0){ nameInput.focus(); return; }
+  lines.forEach(name=>{
+    tasks.push({
+      id: uid(),
+      name,
+      area: area,
+      date: null,
+      priority: null,
+      effort: null,
+      energy: null,
+      project: null,
+      notes: '',
+      status: 'Por organizar',
+      completedDate: null,
+      createdAt: Date.now(),
+    });
+  });
+  await saveTasks();
+  nameInput.value='';
+  nameInput.style.height='';
+  nameInput.focus();
+}
+
+async function onSaveOrganize(id){
+  const isNew = (id === '__new__');
+  let t = isNew ? null : tasks.find(x=>x.id===id);
+  if(!isNew && !t) return;
+
+  const name = document.getElementById('d_name').value.trim();
+  const area = document.getElementById('d_area').value || null;
+  const date = document.getElementById('d_date').value || null;
+  const priority = document.getElementById('d_priority').value || null;
+  const effort = document.getElementById('d_effort').value || null;
+  const energy = document.getElementById('d_energy').value || null;
+  const notes = document.getElementById('d_notes').value || '';
+
+  const faltantes = [];
+  if(!name) faltantes.push('nombre');
+  if(!area) faltantes.push('área');
+  if(!date) faltantes.push('fecha');
+  if(!priority) faltantes.push('prioridad');
+  if(!effort) faltantes.push('esfuerzo');
+  if(!energy) faltantes.push('energía');
+  if(faltantes.length){
+    alert('Falta completar: ' + faltantes.join(', ') + '. Todos los campos son obligatorios, excepto proyecto y observaciones.');
+    return;
+  }
+
+  const projectName = document.getElementById('d_project').value.trim();
+  let project = null;
+  if(projectName){
+    const existing = projects.find(p=>p.name.toLowerCase()===projectName.toLowerCase());
+    if(existing){
+      if(existing.area && existing.area !== area){
+        alert(`El proyecto "${existing.name}" pertenece al área ${AREA_LABEL[existing.area]}, pero elegiste ${AREA_LABEL[area]} para esta tarea. Ajusta el área de la tarea o elige otro proyecto.`);
+        return;
+      }
+      project = existing;
+    } else {
+      project = getOrCreateProject(projectName, area);
+    }
+  }
+
+  if(isNew){
+    t = {
+      id: uid(), name, area, date, priority, effort, energy,
+      project: project?project.name:null, notes, status:'Sin iniciar',
+      completedDate:null, createdAt: Date.now(),
+    };
+    tasks.push(t);
+  } else {
+    t.name = name;
+    t.area = area;
+    t.date = date;
+    t.priority = priority;
+    t.effort = effort;
+    t.energy = energy;
+    t.project = project ? project.name : null;
+    t.notes = notes;
+    t.status = 'Sin iniciar';
+  }
+  await saveTasks();
+  await saveProjects();
+  editingTaskId = null;
+  render();
+}
+
+async function onSaveMatrix(id){
+  const t = tasks.find(x=>x.id===id);
+  if(!t) return;
+  const newName = document.getElementById('m_name_'+id).value.trim() || t.name;
+  const newDate = document.getElementById('m_date_'+id).value || null;
+  let projectName = document.getElementById('m_project_'+id).value.trim();
+  let project = null;
+  if(projectName){
+    const existing = projects.find(p=>p.name.toLowerCase()===projectName.toLowerCase());
+    if(existing){
+      if(existing.area && existing.area !== t.area){
+        alert(`El proyecto "${existing.name}" pertenece al área ${AREA_LABEL[existing.area]}, pero esta tarea es de ${AREA_LABEL[t.area]}. Ajusta el proyecto o cambia el área de la tarea desde "Organizar tareas".`);
+        return;
+      }
+      project = existing;
+    } else {
+      project = getOrCreateProject(projectName, t.area);
+    }
+  }
+  t.name = newName;
+  t.date = newDate;
+  t.project = project ? project.name : null;
+  t.priority = document.getElementById('m_priority_'+id).value || null;
+  t.effort = document.getElementById('m_effort_'+id).value || null;
+  t.energy = document.getElementById('m_energy_'+id).value || null;
+  t.status = document.getElementById('m_status_'+id).value;
+  const notesEl = document.getElementById('m_notes_'+id);
+  t.notes = notesEl ? notesEl.value : (t.notes||'');
+  await saveTasks();
+  await saveProjects();
+  editingTaskId = null;
+  render();
+}
+
+async function onCompleteMatrix(id){
+  const t = tasks.find(x=>x.id===id);
+  if(!t) return;
+  t.status = 'Terminada';
+  t.completedDate = todayStr();
+  await saveTasks();
+  editingTaskId = null;
+  render();
+}
+
+async function onPostponeTomorrow(id){
+  const t = tasks.find(x=>x.id===id);
+  if(!t) return;
+  t.date = tomorrowStr();
+  await saveTasks();
+  render();
+}
+
+async function onDeleteMatrix(id){
+  tasks = tasks.filter(t=>t.id!==id);
+  pendingDeleteId = null;
+  editingTaskId = null;
+  await saveTasks();
+  render();
+}
+
+async function onSaveProjectName(id){
+  const p = projects.find(x=>x.id===id);
+  if(!p) return;
+  const input = document.getElementById('proj_name_'+id);
+  const areaSelect = document.getElementById('proj_area_'+id);
+  const newName = input ? input.value.trim() : '';
+  const newArea = areaSelect ? areaSelect.value : p.area;
+  if(!newName){ alert('El nombre del proyecto no puede estar vacío.'); return; }
+  const oldName = p.name;
+  const oldArea = p.area;
+  if(newName !== oldName){
+    const clash = projects.find(x=>x.id!==id && x.name.toLowerCase()===newName.toLowerCase() && x.area===newArea);
+    if(clash){ alert('Ya existe un proyecto con ese nombre en esta área.'); return; }
+  }
+  p.name = newName;
+  p.area = newArea;
+  tasks.forEach(t=>{
+    if(t.project === oldName){
+      t.project = newName;
+      if(newArea !== oldArea) t.area = newArea;
+    }
+  });
+  await saveTasks();
+  await saveProjects();
+  editingProjectId = null;
+  render();
+}
+
+async function onDeleteProject(id){
+  const p = projects.find(x=>x.id===id);
+  if(!p) return;
+  const stillHasTasks = tasks.some(t=>t.project===p.name);
+  if(stillHasTasks){
+    alert('Este proyecto todavía tiene actividades asociadas, no se puede eliminar.');
+    pendingProjectDeleteId = null;
+    render();
+    return;
+  }
+  projects = projects.filter(x=>x.id!==id);
+  pendingProjectDeleteId = null;
+  await saveProjects();
+  render();
+}
+
+function escapeHtml(s){
+  return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s){ return escapeHtml(s); }
+
+async function init(){
+  document.getElementById('content').innerHTML = '<div class="panel">Cargando...</div>';
+  await loadData();
+  const changed = reprogramOverdue();
+  if(changed) await saveTasks();
+  render();
+
+  document.addEventListener('focusin', (e)=>{
+    const tag = e.target.tagName;
+    if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT'){
+      setTimeout(()=>{
+        e.target.scrollIntoView({block:'center', behavior:'smooth'});
+      }, 300);
+    }
+  });
+}
+init();
+</script>
+</body>
+</html>
