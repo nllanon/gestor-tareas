@@ -142,6 +142,13 @@
     content:"▾";position:absolute;right:10px;top:50%;transform:translateY(-50%);
     color:var(--muted);pointer-events:none;font-size:12px;
   }
+
+  .progress-track{background:#ece9e3;border-radius:6px;height:10px;overflow:hidden;margin-top:6px;}
+  .progress-fill{background:var(--accent);height:100%;border-radius:6px;}
+  .money-row{display:flex;justify-content:space-between;align-items:center;}
+  .money-row.total{font-weight:700;font-size:15px;border-top:1px solid var(--border);margin-top:6px;padding-top:8px;}
+  .money-negative{color:var(--danger);}
+  .money-positive{color:var(--accent-dark);}
 </style>
 </head>
 <body>
@@ -249,13 +256,46 @@ let editingProjectId = null;
 let pendingProjectDeleteId = null;
 let expandedSection = null;
 let viewingTaskId = null;
+
+// ---------- Estado del módulo Gastos ----------
+let gastosIngresos = [];
+let gastosFijos = [];
+let gastosCiclicos = [];
+let gastosExtraordinarios = [];
+let gastosEspera = [];
+let gastosSubTab = 'resumen';
+let gastosViewMonth = null;
+let gastosEditingId = null;
+let gastosPendingDeleteId = null;
+
+function monthStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function currentMonthStr(){ return monthStr(new Date()); }
+function addMonths(ym, delta){
+  const [y,m] = ym.split('-').map(Number);
+  const d = new Date(y, (m-1)+delta, 1);
+  return monthStr(d);
+}
+function monthLabel(ym){
+  const [y,m] = ym.split('-').map(Number);
+  const names = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  return names[m-1]+' '+y;
+}
+function formatCOP(n){
+  n = Math.round(Number(n)||0);
+  return '$'+n.toLocaleString('es-CO');
+}
+function addMonthsToDate(dateStr, months){
+  if(!dateStr) return null;
+  const [y,m,d] = dateStr.split('-').map(Number);
+  const nd = new Date(y, (m-1)+months, d);
+  return monthStr(nd)+'-'+String(nd.getDate()).padStart(2,'0');
+}
 let pendingImportText = '';
 let importConfirmPending = false;
 let importWarnings = [];
 
 // ======================================================
-// CONFIGURACIÓN DE SUPABASE — pega aquí tus datos
-// (Project Settings → API en tu proyecto de Supabase)
+// CONFIGURACIÓN DE SUPABASE — ya configurado para TareasNico
 // ======================================================
 const SUPABASE_URL = 'https://wfzmpdcxyuskfyjnwmme.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_KGfozOeJvj6vJBzHOTnWVg_wezXkWsH';
@@ -263,36 +303,51 @@ const supabaseClient = (SUPABASE_URL.startsWith('http'))
   ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
+async function kvGet(key){
+  if(!supabaseClient) return null;
+  const { data, error } = await supabaseClient.from('kv_store').select('value').eq('key',key).maybeSingle();
+  if(error) throw error;
+  return data ? data.value : null;
+}
+async function kvSet(key, value){
+  if(!supabaseClient) return;
+  const { error } = await supabaseClient.from('kv_store').upsert({ key, value });
+  if(error) throw error;
+}
+
 async function loadData(){
   if(!supabaseClient){
     alert('Falta configurar Supabase: edita SUPABASE_URL y SUPABASE_ANON_KEY en el código.');
     tasks = []; projects = [];
+    gastosIngresos = []; gastosFijos = []; gastosCiclicos = []; gastosExtraordinarios = []; gastosEspera = [];
     return;
   }
-  try{
-    const { data, error } = await supabaseClient.from('kv_store').select('value').eq('key','tasks').maybeSingle();
-    if(error) throw error;
-    tasks = data ? data.value : [];
-  }catch(e){ console.error('Error cargando tareas', e); tasks = []; }
-  try{
-    const { data, error } = await supabaseClient.from('kv_store').select('value').eq('key','projects').maybeSingle();
-    if(error) throw error;
-    projects = data ? data.value : [];
-  }catch(e){ console.error('Error cargando proyectos', e); projects = []; }
+  try{ tasks = (await kvGet('tasks')) || []; }catch(e){ console.error('Error cargando tareas', e); tasks = []; }
+  try{ projects = (await kvGet('projects')) || []; }catch(e){ console.error('Error cargando proyectos', e); projects = []; }
+  try{ gastosIngresos = (await kvGet('gastos_ingresos')) || []; }catch(e){ console.error('Error cargando gastos_ingresos', e); gastosIngresos = []; }
+  try{ gastosFijos = (await kvGet('gastos_fijos')) || []; }catch(e){ console.error('Error cargando gastos_fijos', e); gastosFijos = []; }
+  try{ gastosCiclicos = (await kvGet('gastos_ciclicos')) || []; }catch(e){ console.error('Error cargando gastos_ciclicos', e); gastosCiclicos = []; }
+  try{ gastosExtraordinarios = (await kvGet('gastos_extraordinarios')) || []; }catch(e){ console.error('Error cargando gastos_extraordinarios', e); gastosExtraordinarios = []; }
+  try{ gastosEspera = (await kvGet('gastos_espera')) || []; }catch(e){ console.error('Error cargando gastos_espera', e); gastosEspera = []; }
 }
 async function saveTasks(){
-  if(!supabaseClient) return;
-  try{
-    const { error } = await supabaseClient.from('kv_store').upsert({ key:'tasks', value: tasks });
-    if(error) throw error;
-  }catch(e){ console.error('Error guardando tareas', e); alert('No se pudo guardar. Intenta de nuevo.'); }
+  try{ await kvSet('tasks', tasks); }
+  catch(e){ console.error('Error guardando tareas', e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
 async function saveProjects(){
-  if(!supabaseClient) return;
-  try{
-    const { error } = await supabaseClient.from('kv_store').upsert({ key:'projects', value: projects });
-    if(error) throw error;
-  }catch(e){ console.error('Error guardando proyectos', e); }
+  try{ await kvSet('projects', projects); }
+  catch(e){ console.error('Error guardando proyectos', e); }
+}
+async function saveGastos(cat){
+  const map = {
+    ingresos: gastosIngresos,
+    fijos: gastosFijos,
+    ciclicos: gastosCiclicos,
+    extraordinarios: gastosExtraordinarios,
+    espera: gastosEspera,
+  };
+  try{ await kvSet('gastos_'+cat, map[cat]); }
+  catch(e){ console.error('Error guardando gastos_'+cat, e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
 
 function reprogramOverdue(){
@@ -327,6 +382,7 @@ function renderTabs(){
     ['organizar','📥 Organizar tareas'],
     ['hoy','📅 HOY'],
     ['proyectos','📁 Proyectos y tareas'],
+    ['gastos','💰 Gastos'],
   ];
   const secondary = [
     ['datos','📊 Datos'],
@@ -373,6 +429,7 @@ function render(){
   else if(currentTab==='completadas') c.innerHTML = viewCompletadas();
   else if(currentTab==='proyectos') c.innerHTML = viewProyectos();
   else if(currentTab==='datos') c.innerHTML = viewDatos();
+  else if(currentTab==='gastos') c.innerHTML = viewGastos();
   bindEvents();
 }
 
@@ -838,6 +895,467 @@ function viewProyectos(){
   return html;
 }
 
+// ---------- Interfaz Gastos ----------
+function viewGastos(){
+  let html = renderGastosSubNav();
+  if(gastosSubTab==='resumen') html += viewGastosResumen();
+  else if(gastosSubTab==='ingresos') html += viewGastosSimpleList('ingresos', gastosIngresos, 'Ingresos mensuales recurrentes');
+  else if(gastosSubTab==='fijos') html += viewGastosSimpleList('fijos', gastosFijos, 'Gastos fijos mensuales');
+  else if(gastosSubTab==='ciclicos') html += viewGastosCiclicos();
+  else if(gastosSubTab==='extraordinarios') html += viewGastosDatedList('extraordinarios', gastosExtraordinarios, 'Gastos extraordinarios', true);
+  else if(gastosSubTab==='espera') html += viewGastosDatedList('espera', gastosEspera, 'Pagos en espera', false);
+  return html;
+}
+function renderGastosSubNav(){
+  const tabs = [
+    ['resumen','📊 Resumen'],
+    ['ingresos','💵 Ingresos'],
+    ['fijos','📌 Fijos'],
+    ['ciclicos','🐷 Cíclicos'],
+    ['extraordinarios','⚡ Extraordinarios'],
+    ['espera','⏳ En espera'],
+  ];
+  let html = '<div class="icon-actions" style="margin-bottom:12px;flex-wrap:wrap;">';
+  tabs.forEach(([key,label])=>{
+    const active = gastosSubTab===key;
+    html += `<button type="button" class="secondary" data-gastos-tab="${key}" style="${active?'background:var(--accent);color:#fff;border-color:var(--accent);':''}">${label}</button>`;
+  });
+  html += '</div>';
+  return html;
+}
+function renderMonthNav(){
+  return `
+  <div class="panel" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+    <button type="button" class="icon-btn" data-month-prev="1" title="Mes anterior" aria-label="Mes anterior">◀</button>
+    <div style="font-weight:700;font-size:15px;">${monthLabel(gastosViewMonth)}</div>
+    <button type="button" class="icon-btn" data-month-next="1" title="Mes siguiente" aria-label="Mes siguiente">▶</button>
+  </div>`;
+}
+
+function viewGastosResumen(){
+  const totalIngresos = gastosIngresos.reduce((s,i)=>s+gastosMonthlyInfo('ingresos',i,gastosViewMonth).real,0);
+  const totalFijos = gastosFijos.reduce((s,i)=>s+gastosMonthlyInfo('fijos',i,gastosViewMonth).real,0);
+  const totalProvisiones = gastosCiclicos.reduce((s,c)=>s+gastosMonthlyInfo('ciclicos',c,gastosViewMonth).real,0);
+  const extraordinariosMes = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date && e.date.slice(0,7)===gastosViewMonth);
+  const totalExtraordinarios = extraordinariosMes.reduce((s,e)=>s+Number(e.amount||0),0);
+  const today = todayStr();
+  const esperaVencidos = gastosEspera.filter(e=>e.status==='Pendiente' && e.date && e.date < today);
+  const totalEspera = esperaVencidos.reduce((s,e)=>s+Number(e.amount||0),0);
+  const disponible = totalIngresos - (totalFijos + totalProvisiones + totalExtraordinarios + totalEspera);
+
+  const ingresosPendientes = gastosIngresos.filter(i=>!(i.paidMonths && i.paidMonths[gastosViewMonth]));
+  const fijosPendientes = gastosFijos.filter(i=>!(i.paidMonths && i.paidMonths[gastosViewMonth]));
+  const ciclicosPendientes = gastosCiclicos.filter(c=>!gastosMonthlyInfo('ciclicos',c,gastosViewMonth).confirmed);
+
+  let html = renderMonthNav();
+  html += `<div class="panel">
+    <h2>Resumen — ${monthLabel(gastosViewMonth)}</h2>
+    <div class="status-msg">Los valores usan lo que confirmes/ajustes para este mes; lo que no toques usa el plan.</div>
+    <div class="money-row"><span>Ingresos</span><span class="money-positive">${formatCOP(totalIngresos)}</span></div>
+    <div class="money-row"><span>Gastos fijos</span><span class="money-negative">-${formatCOP(totalFijos)}</span></div>
+    <div class="money-row"><span>Provisiones (cíclicos)</span><span class="money-negative">-${formatCOP(totalProvisiones)}</span></div>
+    <div class="money-row"><span>Extraordinarios pendientes (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalExtraordinarios)}</span></div>
+    <div class="money-row"><span>En espera vencidos (hoy)</span><span class="money-negative">-${formatCOP(totalEspera)}</span></div>
+    <div class="money-row total"><span>Dinero disponible</span><span class="${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</span></div>
+  </div>`;
+
+  if(fijosPendientes.length || ciclicosPendientes.length || extraordinariosMes.length || esperaVencidos.length){
+    html += `<div class="panel"><h2>🔔 Pendiente por pagar</h2>`;
+    fijosPendientes.forEach(i=>{
+      const info = gastosMonthlyInfo('fijos', i, gastosViewMonth);
+      html += renderGastosPendingRow(i.name, info.plan);
+    });
+    ciclicosPendientes.forEach(c=>{
+      const info = gastosMonthlyInfo('ciclicos', c, gastosViewMonth);
+      html += renderGastosPendingRow(c.name+' (provisión)', info.plan);
+    });
+    extraordinariosMes.forEach(e=>{
+      html += renderGastosPendingRow(e.name, e.amount);
+    });
+    esperaVencidos.forEach(e=>{
+      html += renderGastosPendingRow(e.name+' (vencido desde '+e.date+')', e.amount);
+    });
+    html += `</div>`;
+  }
+  if(ingresosPendientes.length){
+    html += `<div class="panel"><h2>🔔 Pendiente por cobrar</h2>`;
+    ingresosPendientes.forEach(i=>{
+      const info = gastosMonthlyInfo('ingresos', i, gastosViewMonth);
+      html += renderGastosPendingRow(i.name, info.plan);
+    });
+    html += `</div>`;
+  }
+
+  html += `<div class="panel"><h2>Ingresos de ${monthLabel(gastosViewMonth)}</h2>`;
+  if(gastosIngresos.length===0) html += `<div class="empty">Sin ingresos registrados en el plan.</div>`;
+  gastosIngresos.forEach(i=>{ html += renderGastosInlineRow('ingresos', i); });
+  html += `</div>`;
+
+  html += `<div class="panel"><h2>Fijos de ${monthLabel(gastosViewMonth)}</h2>`;
+  if(gastosFijos.length===0) html += `<div class="empty">Sin fijos registrados en el plan.</div>`;
+  gastosFijos.forEach(i=>{ html += renderGastosInlineRow('fijos', i); });
+  html += `</div>`;
+
+  html += `<div class="panel"><h2>Provisiones cíclicas de ${monthLabel(gastosViewMonth)}</h2>`;
+  if(gastosCiclicos.length===0) html += `<div class="empty">Sin cíclicos registrados en el plan.</div>`;
+  gastosCiclicos.forEach(c=>{ html += renderGastosReconcileItem('ciclicos', c); });
+  html += `</div>`;
+
+  if(extraordinariosMes.length){
+    html += `<div class="panel"><h2>Extraordinarios de ${monthLabel(gastosViewMonth)}</h2>`;
+    extraordinariosMes.forEach(e=>{
+      html += `<div class="task-card"><div class="task-top"><div class="task-name">${escapeHtml(e.name)}</div><div class="task-name">${formatCOP(e.amount)}</div></div></div>`;
+    });
+    html += `</div>`;
+  }
+  if(esperaVencidos.length){
+    html += `<div class="panel"><h2>En espera vencidos</h2>`;
+    esperaVencidos.forEach(e=>{
+      html += `<div class="task-card status-organizar"><div class="task-top"><div class="task-name">${escapeHtml(e.name)}</div><div class="task-name">${formatCOP(e.amount)}</div></div><div class="task-meta">Vencido: ${e.date}</div></div>`;
+    });
+    html += `</div>`;
+  }
+  return html;
+}
+
+// ---------- Reconciliación plan vs. real por mes ----------
+function renderGastosInlineRow(cat, item){
+  const info = gastosMonthlyInfo(cat, item, gastosViewMonth);
+  const paid = !!(item.paidMonths && item.paidMonths[gastosViewMonth]);
+  const diff = info.real - info.plan;
+  let varianceHtml = '';
+  if(diff !== 0){
+    const isIncome = cat==='ingresos';
+    const good = isIncome ? diff>0 : diff<0;
+    varianceHtml = `<div class="task-meta" style="margin-top:4px;"><span class="${good?'money-positive':'money-negative'}">${diff>0?'+':''}${formatCOP(diff)} vs. plan</span></div>`;
+  }
+  return `<div class="task-card">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:110px;">
+        <div class="task-name">${escapeHtml(item.name)}</div>
+        <div class="task-meta">Presupuestado: ${formatCOP(info.plan)}</div>
+      </div>
+      <input type="text" inputmode="numeric" value="${info.real}" data-gastos-inline-amount="${cat}:${item.id}" style="width:120px;min-width:100px;">
+      <button type="button" class="icon-btn" data-gastos-toggle-paid="${cat}:${item.id}" title="${paid?'Pagado — toca para desmarcar':'Marcar pagado'}" aria-label="Marcar pagado">${paid?'✅':'⬜'}</button>
+    </div>
+    ${varianceHtml}
+  </div>`;
+}
+function renderGastosPendingRow(name, amount){
+  return `<div class="task-card status-organizar">
+    <div class="task-top">
+      <div class="task-name">${escapeHtml(name)}</div>
+      <div class="task-name">${formatCOP(amount)}</div>
+    </div>
+  </div>`;
+}
+function gastosMonthlyInfo(cat, item, month){
+  if(cat==='ciclicos'){
+    const plan = Number(item.totalAmount||0)/Math.max(1,Number(item.periodMonths||1));
+    const contrib = (item.contributions && item.contributions[month]!==undefined) ? item.contributions[month] : null;
+    return { plan, real: contrib!==null?contrib:plan, confirmed: contrib!==null };
+  }
+  const plan = Number(item.amount||0);
+  const ov = (item.overrides && item.overrides[month]!==undefined) ? item.overrides[month] : null;
+  return { plan, real: ov!==null?ov:plan, confirmed: ov!==null };
+}
+function gastosSetMonthly(cat, item, month, value){
+  if(cat==='ciclicos'){
+    if(!item.contributions) item.contributions = {};
+    item.contributions[month] = value;
+  } else {
+    if(!item.overrides) item.overrides = {};
+    item.overrides[month] = value;
+  }
+}
+function gastosResetMonthly(cat, item, month){
+  if(cat==='ciclicos'){
+    if(item.contributions) delete item.contributions[month];
+  } else {
+    if(item.overrides) delete item.overrides[month];
+  }
+}
+function ciclicoAccumulated(c){
+  const contrib = c.contributions || {};
+  let sum = Object.values(contrib).reduce((s,v)=>s+Number(v||0),0);
+  if((!c.contributions || Object.keys(c.contributions).length===0) && c.accumulated){
+    sum += Number(c.accumulated||0);
+  }
+  return sum;
+}
+function renderGastosReconcileItem(cat, item){
+  const key = cat+':'+item.id;
+  const info = gastosMonthlyInfo(cat, item, gastosViewMonth);
+  const isEditing = gastosEditingId === ('reconcile:'+key);
+  if(isEditing){
+    return `<div class="task-card">
+      <div class="task-name">${escapeHtml(item.name)}</div>
+      <label>Real este mes (plan: ${formatCOP(info.plan)})</label>
+      <input type="text" id="gs_recon_amount_${item.id}" value="${info.real}" inputmode="numeric">
+      <div class="icon-actions" style="margin-top:8px;">
+        ${iconAction('save','save','Guardar', `data-gastos-reconcile-save="${key}"`)}
+        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+      </div>
+    </div>`;
+  }
+  let actions = iconAction('edit','edit','Ajustar', `data-gastos-reconcile-edit="${key}"`);
+  actions += info.confirmed
+    ? iconAction('cancel','x','Volver al plan', `data-gastos-reconcile-reset="${key}"`)
+    : iconAction('complete','check','Confirmar', `data-gastos-reconcile-confirm="${key}"`);
+  const diff = info.real - info.plan;
+  let varianceHtml = '';
+  if(info.confirmed && diff !== 0){
+    const isIncome = cat==='ingresos';
+    const good = isIncome ? diff>0 : diff<0;
+    varianceHtml = `<div class="task-meta" style="margin-top:2px;"><span class="${good?'money-positive':'money-negative'}">${diff>0?'+':''}${formatCOP(diff)} vs. plan</span></div>`;
+  }
+  return `<div class="task-card ${info.confirmed?'status-terminada':'status-sin-iniciar'}">
+    <div class="task-top">
+      <div>
+        <div class="task-name">${escapeHtml(item.name)}</div>
+        <div class="task-meta">Plan: ${formatCOP(info.plan)} · <span class="badge ${info.confirmed?'status-terminada':'status-sin-iniciar'}">${info.confirmed?'Confirmado':'Usando plan'}</span></div>
+        ${varianceHtml}
+      </div>
+      <div class="task-name">${formatCOP(info.real)}</div>
+    </div>
+    <div class="icon-actions" style="margin-top:8px;">${actions}</div>
+  </div>`;
+}
+async function onGastosReconcileConfirm(key){
+  const [cat,id] = key.split(':');
+  const item = gastosListFor(cat).find(x=>x.id===id);
+  if(!item) return;
+  const info = gastosMonthlyInfo(cat, item, gastosViewMonth);
+  gastosSetMonthly(cat, item, gastosViewMonth, info.plan);
+  await saveGastos(cat);
+  render();
+}
+async function onGastosReconcileReset(key){
+  const [cat,id] = key.split(':');
+  const item = gastosListFor(cat).find(x=>x.id===id);
+  if(!item) return;
+  gastosResetMonthly(cat, item, gastosViewMonth);
+  await saveGastos(cat);
+  render();
+}
+async function onGastosReconcileSave(key){
+  const [cat,id] = key.split(':');
+  const item = gastosListFor(cat).find(x=>x.id===id);
+  if(!item) return;
+  const val = parseMoney(document.getElementById('gs_recon_amount_'+id).value);
+  gastosSetMonthly(cat, item, gastosViewMonth, val);
+  gastosEditingId = null;
+  await saveGastos(cat);
+  render();
+}
+
+async function onGastosInlineAmount(key, value){
+  const [cat,id] = key.split(':');
+  const item = gastosListFor(cat).find(x=>x.id===id);
+  if(!item) return;
+  const val = parseMoney(value);
+  gastosSetMonthly(cat, item, gastosViewMonth, val);
+  await saveGastos(cat);
+  render();
+}
+async function onGastosTogglePaid(key){
+  const [cat,id] = key.split(':');
+  const item = gastosListFor(cat).find(x=>x.id===id);
+  if(!item) return;
+  if(!item.paidMonths) item.paidMonths = {};
+  if(item.paidMonths[gastosViewMonth]) delete item.paidMonths[gastosViewMonth];
+  else item.paidMonths[gastosViewMonth] = true;
+  await saveGastos(cat);
+  render();
+}
+
+function viewGastosSimpleList(cat, list, title){
+  let html = `<div class="panel"><h2>${title}</h2>
+    <div class="row">
+      <div><input type="text" id="gs_new_name_${cat}" placeholder="Nombre"></div>
+      <div><input type="text" id="gs_new_amount_${cat}" placeholder="Monto" inputmode="numeric"></div>
+    </div>
+    <button type="button" class="primary" data-gastos-add="${cat}" style="width:100%;margin-top:8px;">➤ Agregar</button>
+  </div>`;
+  html += `<div class="panel">`;
+  if(list.length===0) html += `<div class="empty">Sin registros.</div>`;
+  list.forEach(item=>{
+    html += renderGastosSimpleItem(cat, item);
+  });
+  const total = list.reduce((s,i)=>s+Number(i.amount||0),0);
+  html += `<div class="money-row total"><span>Total</span><span>${formatCOP(total)}</span></div>`;
+  html += `</div>`;
+  return html;
+}
+function renderGastosSimpleItem(cat, item){
+  const key = cat+':'+item.id;
+  const isEditing = gastosEditingId===key;
+  const isConfirmingDelete = gastosPendingDeleteId===key;
+  if(isEditing){
+    return `<div class="task-card">
+      <label>Nombre</label>
+      <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
+      <label>Monto</label>
+      <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
+      <div class="icon-actions" style="margin-top:8px;">
+        ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
+        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+      </div>
+    </div>`;
+  }
+  const actions = isConfirmingDelete
+    ? iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`)
+    : iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`) + iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
+  return `<div class="task-card">
+    <div class="task-top">
+      <div class="task-name">${escapeHtml(item.name)}</div>
+      <div class="task-name">${formatCOP(item.amount)}</div>
+    </div>
+    <div class="icon-actions" style="margin-top:8px;">${actions}</div>
+  </div>`;
+}
+
+function viewGastosDatedList(cat, list, title, filterByMonth){
+  let html = `<div class="panel"><h2>${title}</h2>
+    <div class="row">
+      <div><input type="text" id="gs_new_name_${cat}" placeholder="Nombre"></div>
+      <div><input type="text" id="gs_new_amount_${cat}" placeholder="Monto" inputmode="numeric"></div>
+    </div>
+    <label>Fecha ${cat==='espera'?'(opcional, si la sabes)':''}</label>
+    <input type="date" id="gs_new_date_${cat}">
+    <button type="button" class="primary" data-gastos-add="${cat}" style="width:100%;margin-top:8px;">➤ Agregar</button>
+  </div>`;
+  html += `<div class="panel">`;
+  const sorted = list.slice().sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
+  if(sorted.length===0) html += `<div class="empty">Sin registros.</div>`;
+  sorted.forEach(item=>{
+    html += renderGastosDatedItem(cat, item);
+  });
+  html += `</div>`;
+  return html;
+}
+function renderGastosDatedItem(cat, item){
+  const key = cat+':'+item.id;
+  const isEditing = gastosEditingId===key;
+  const isConfirmingDelete = gastosPendingDeleteId===key;
+  if(isEditing){
+    return `<div class="task-card">
+      <label>Nombre</label>
+      <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
+      <label>Monto</label>
+      <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
+      <label>Fecha</label>
+      <input type="date" id="gs_edit_date_${item.id}" value="${item.date||''}">
+      <div class="icon-actions" style="margin-top:8px;">
+        ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
+        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+      </div>
+    </div>`;
+  }
+  const isVencido = item.status==='Pendiente' && item.date && item.date < todayStr();
+  const statusClassLocal = item.status==='Pagado' ? 'status-terminada' : (isVencido ? 'status-organizar' : 'status-sin-iniciar');
+  let actions;
+  if(isConfirmingDelete){
+    actions = iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`);
+  } else {
+    actions = iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`);
+    actions += item.status==='Pendiente'
+      ? iconAction('complete','check','Marcar pagado', `data-gastos-toggle-status="${key}"`)
+      : iconAction('cancel','x','Reabrir', `data-gastos-toggle-status="${key}"`);
+    actions += iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
+  }
+  return `<div class="task-card ${statusClassLocal}">
+    <div class="task-top">
+      <div>
+        <div class="task-name">${escapeHtml(item.name)}</div>
+        <div class="task-meta">
+          <span class="badge ${statusClassLocal}">${item.status}${isVencido?' · vencido':''}</span>
+          ${item.date?`<span>${item.date}</span>`:''}
+        </div>
+      </div>
+      <div class="task-name">${formatCOP(item.amount)}</div>
+    </div>
+    <div class="icon-actions" style="margin-top:8px;">${actions}</div>
+  </div>`;
+}
+
+function viewGastosCiclicos(){
+  let html = `<div class="panel">
+    <h2>Gastos cíclicos (provisionados)</h2>
+    <div class="status-msg">Cada uno arma una "alcancía": aporta la provisión mensual hasta completar el monto total, y luego lo marcas como pagado.</div>
+    <div class="row">
+      <div><input type="text" id="gs_new_name_ciclicos" placeholder="Nombre"></div>
+      <div><input type="text" id="gs_new_amount_ciclicos" placeholder="Monto total" inputmode="numeric"></div>
+    </div>
+    <div class="row" style="margin-top:6px;">
+      <div><input type="text" id="gs_new_period_ciclicos" placeholder="Cada cuántos meses (ej. 6)" inputmode="numeric"></div>
+      <div><input type="date" id="gs_new_date_ciclicos"></div>
+    </div>
+    <button type="button" class="primary" data-gastos-add="ciclicos" style="width:100%;margin-top:8px;">➤ Agregar</button>
+  </div>`;
+  html += `<div class="panel">`;
+  if(gastosCiclicos.length===0) html += `<div class="empty">Sin registros.</div>`;
+  gastosCiclicos.forEach(c=>{
+    html += renderGastosCiclicoItem(c);
+  });
+  html += `</div>`;
+  return html;
+}
+function renderGastosCiclicoItem(c){
+  const key = 'ciclicos:'+c.id;
+  const isEditing = gastosEditingId===key;
+  const isConfirmingDelete = gastosPendingDeleteId===key;
+  if(isEditing){
+    return `<div class="task-card">
+      <label>Nombre</label>
+      <input type="text" id="gs_edit_name_${c.id}" value="${escapeAttr(c.name)}">
+      <label>Monto total</label>
+      <input type="text" id="gs_edit_amount_${c.id}" value="${c.totalAmount}" inputmode="numeric">
+      <label>Cada cuántos meses</label>
+      <input type="text" id="gs_edit_period_${c.id}" value="${c.periodMonths}" inputmode="numeric">
+      <label>Próxima fecha</label>
+      <input type="date" id="gs_edit_date_${c.id}" value="${c.nextDueDate||''}">
+      <div class="icon-actions" style="margin-top:8px;">
+        ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
+        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+      </div>
+    </div>`;
+  }
+  const total = Number(c.totalAmount||0);
+  const acumulado = ciclicoAccumulated(c);
+  const provision = total/Math.max(1,Number(c.periodMonths||1));
+  const pct = total>0 ? Math.min(100, Math.round((acumulado/total)*100)) : 0;
+  const yaAporto = !!(c.contributions && c.contributions[gastosViewMonth]!==undefined);
+  const completo = acumulado >= total && total>0;
+
+  let actions;
+  if(isConfirmingDelete){
+    actions = iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`);
+  } else {
+    actions = iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`);
+    if(completo){
+      actions += iconAction('complete','check','Marcar pagado', `data-gastos-mark-paid="${c.id}"`);
+    } else {
+      actions += `<button type="button" class="icon-btn" title="${yaAporto?'Ya aportaste este mes':'Aportar este mes'}" aria-label="Aportar este mes" ${yaAporto?'disabled style="opacity:.4;"':''} data-gastos-contribute="${c.id}">🐷</button>`;
+    }
+    actions += iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
+  }
+
+  return `<div class="task-card">
+    <div class="task-top">
+      <div>
+        <div class="task-name">${escapeHtml(c.name)}</div>
+        <div class="task-meta">Provisión mensual: ${formatCOP(provision)} · cada ${c.periodMonths} mes(es)${c.nextDueDate?` · próximo: ${c.nextDueDate}`:''}</div>
+      </div>
+      <div class="task-name">${formatCOP(total)}</div>
+    </div>
+    <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
+    <div class="task-meta" style="margin-top:4px;">${formatCOP(acumulado)} de ${formatCOP(total)} (${pct}%)${completo?' · ¡completo!':''}</div>
+    <div class="icon-actions" style="margin-top:8px;">${actions}</div>
+  </div>`;
+}
+
+
 // ---------- Interfaz Datos (exportar / importar) ----------
 const DATA_COLUMNS = ['Nombre','Área','Prioridad','Esfuerzo','Energía','Fecha','Estado','Proyecto','Observaciones','Fecha completada'];
 
@@ -1115,6 +1633,64 @@ function bindEvents(){
   document.querySelectorAll('[data-dismiss-warnings]').forEach(b=>{
     b.onclick = ()=>{ importWarnings=[]; render(); };
   });
+
+  document.querySelectorAll('[data-gastos-tab]').forEach(b=>{
+    b.onclick = ()=>{ gastosSubTab = b.getAttribute('data-gastos-tab'); gastosEditingId=null; gastosPendingDeleteId=null; render(); };
+  });
+  document.querySelectorAll('[data-month-prev]').forEach(b=>{
+    b.onclick = ()=>{ gastosViewMonth = addMonths(gastosViewMonth, -1); render(); };
+  });
+  document.querySelectorAll('[data-month-next]').forEach(b=>{
+    b.onclick = ()=>{ gastosViewMonth = addMonths(gastosViewMonth, 1); render(); };
+  });
+  document.querySelectorAll('[data-gastos-add]').forEach(b=>{
+    b.onclick = ()=>onGastosAdd(b.getAttribute('data-gastos-add'));
+  });
+  document.querySelectorAll('[data-gastos-edit]').forEach(b=>{
+    b.onclick = ()=>{ gastosEditingId = b.getAttribute('data-gastos-edit'); gastosPendingDeleteId=null; render(); };
+  });
+  document.querySelectorAll('[data-gastos-cancel-edit]').forEach(b=>{
+    b.onclick = ()=>{ gastosEditingId=null; render(); };
+  });
+  document.querySelectorAll('[data-gastos-save]').forEach(b=>{
+    b.onclick = ()=>onGastosSaveEdit(b.getAttribute('data-gastos-save'));
+  });
+  document.querySelectorAll('[data-gastos-delete]').forEach(b=>{
+    b.onclick = ()=>{ gastosPendingDeleteId = b.getAttribute('data-gastos-delete'); render(); };
+  });
+  document.querySelectorAll('[data-gastos-cancel-delete]').forEach(b=>{
+    b.onclick = ()=>{ gastosPendingDeleteId=null; render(); };
+  });
+  document.querySelectorAll('[data-gastos-confirm-delete]').forEach(b=>{
+    b.onclick = ()=>onGastosDelete(b.getAttribute('data-gastos-confirm-delete'));
+  });
+  document.querySelectorAll('[data-gastos-toggle-status]').forEach(b=>{
+    b.onclick = ()=>onGastosToggleStatus(b.getAttribute('data-gastos-toggle-status'));
+  });
+  document.querySelectorAll('[data-gastos-contribute]').forEach(b=>{
+    b.onclick = ()=>onGastosContribute(b.getAttribute('data-gastos-contribute'));
+  });
+  document.querySelectorAll('[data-gastos-mark-paid]').forEach(b=>{
+    b.onclick = ()=>onGastosMarkPaid(b.getAttribute('data-gastos-mark-paid'));
+  });
+  document.querySelectorAll('[data-gastos-reconcile-edit]').forEach(b=>{
+    b.onclick = ()=>{ gastosEditingId = 'reconcile:'+b.getAttribute('data-gastos-reconcile-edit'); render(); };
+  });
+  document.querySelectorAll('[data-gastos-reconcile-confirm]').forEach(b=>{
+    b.onclick = ()=>onGastosReconcileConfirm(b.getAttribute('data-gastos-reconcile-confirm'));
+  });
+  document.querySelectorAll('[data-gastos-reconcile-reset]').forEach(b=>{
+    b.onclick = ()=>onGastosReconcileReset(b.getAttribute('data-gastos-reconcile-reset'));
+  });
+  document.querySelectorAll('[data-gastos-reconcile-save]').forEach(b=>{
+    b.onclick = ()=>onGastosReconcileSave(b.getAttribute('data-gastos-reconcile-save'));
+  });
+  document.querySelectorAll('[data-gastos-inline-amount]').forEach(inp=>{
+    inp.onchange = ()=>onGastosInlineAmount(inp.getAttribute('data-gastos-inline-amount'), inp.value);
+  });
+  document.querySelectorAll('[data-gastos-toggle-paid]').forEach(b=>{
+    b.onclick = ()=>onGastosTogglePaid(b.getAttribute('data-gastos-toggle-paid'));
+  });
 }
 
 async function onCrearTarea(area){
@@ -1312,6 +1888,123 @@ async function onDeleteProject(id){
   render();
 }
 
+// ---------- Lógica del módulo Gastos ----------
+function gastosListFor(cat){
+  if(cat==='ingresos') return gastosIngresos;
+  if(cat==='fijos') return gastosFijos;
+  if(cat==='ciclicos') return gastosCiclicos;
+  if(cat==='extraordinarios') return gastosExtraordinarios;
+  if(cat==='espera') return gastosEspera;
+  return [];
+}
+function parseMoney(v){
+  const n = Number(String(v||'').replace(/[^0-9.-]/g,''));
+  return isNaN(n) ? 0 : n;
+}
+
+async function onGastosAdd(cat){
+  const name = (document.getElementById('gs_new_name_'+cat).value||'').trim();
+  if(!name){ alert('Escribe un nombre.'); return; }
+  const amount = parseMoney(document.getElementById('gs_new_amount_'+cat).value);
+  if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
+
+  if(cat==='ciclicos'){
+    const period = parseInt(document.getElementById('gs_new_period_ciclicos').value, 10);
+    const date = document.getElementById('gs_new_date_ciclicos').value || null;
+    if(!period || period<1){ alert('Indica cada cuántos meses se repite (ej. 6).'); return; }
+    gastosCiclicos.push({ id:uid(), name, totalAmount:amount, periodMonths:period, nextDueDate:date, contributions:{} });
+    await saveGastos('ciclicos');
+  } else if(cat==='extraordinarios' || cat==='espera'){
+    const date = document.getElementById('gs_new_date_'+cat).value || null;
+    if(cat==='extraordinarios' && !date){ alert('Indica la fecha del gasto extraordinario.'); return; }
+    gastosListFor(cat).push({ id:uid(), name, amount, date, status:'Pendiente' });
+    await saveGastos(cat);
+  } else {
+    gastosListFor(cat).push({ id:uid(), name, amount, overrides:{}, paidMonths:{} });
+    await saveGastos(cat);
+  }
+
+  document.getElementById('gs_new_name_'+cat).value='';
+  const amountEl = document.getElementById('gs_new_amount_'+cat);
+  if(amountEl) amountEl.value='';
+  const dateEl = document.getElementById('gs_new_date_'+cat);
+  if(dateEl) dateEl.value='';
+  const periodEl = document.getElementById('gs_new_period_'+cat);
+  if(periodEl) periodEl.value='';
+  render();
+}
+
+async function onGastosSaveEdit(key){
+  const [cat, id] = key.split(':');
+  const list = gastosListFor(cat);
+  const item = list.find(x=>x.id===id);
+  if(!item) return;
+  const name = (document.getElementById('gs_edit_name_'+id).value||'').trim();
+  if(!name){ alert('El nombre no puede estar vacío.'); return; }
+  item.name = name;
+
+  if(cat==='ciclicos'){
+    const amount = parseMoney(document.getElementById('gs_edit_amount_'+id).value);
+    const period = parseInt(document.getElementById('gs_edit_period_'+id).value, 10);
+    if(amount<=0 || !period || period<1){ alert('Revisa el monto total y la periodicidad.'); return; }
+    item.totalAmount = amount;
+    item.periodMonths = period;
+    item.nextDueDate = document.getElementById('gs_edit_date_'+id).value || null;
+  } else {
+    const amount = parseMoney(document.getElementById('gs_edit_amount_'+id).value);
+    if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
+    item.amount = amount;
+    const dateEl = document.getElementById('gs_edit_date_'+id);
+    if(dateEl) item.date = dateEl.value || null;
+  }
+
+  gastosEditingId = null;
+  await saveGastos(cat);
+  render();
+}
+
+async function onGastosDelete(key){
+  const [cat, id] = key.split(':');
+  const list = gastosListFor(cat);
+  const idx = list.findIndex(x=>x.id===id);
+  if(idx>=0) list.splice(idx,1);
+  gastosPendingDeleteId = null;
+  await saveGastos(cat);
+  render();
+}
+
+async function onGastosToggleStatus(key){
+  const [cat, id] = key.split(':');
+  const item = gastosListFor(cat).find(x=>x.id===id);
+  if(!item) return;
+  item.status = item.status==='Pendiente' ? 'Pagado' : 'Pendiente';
+  await saveGastos(cat);
+  render();
+}
+
+async function onGastosContribute(id){
+  const c = gastosCiclicos.find(x=>x.id===id);
+  if(!c) return;
+  if(!c.contributions) c.contributions = {};
+  if(c.contributions[gastosViewMonth] !== undefined) return;
+  const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
+  c.contributions[gastosViewMonth] = provision;
+  await saveGastos('ciclicos');
+  render();
+}
+
+async function onGastosMarkPaid(id){
+  const c = gastosCiclicos.find(x=>x.id===id);
+  if(!c) return;
+  c.contributions = {};
+  c.accumulated = 0;
+  if(c.nextDueDate){
+    c.nextDueDate = addMonthsToDate(c.nextDueDate, c.periodMonths);
+  }
+  await saveGastos('ciclicos');
+  render();
+}
+
 function escapeHtml(s){
   return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -1319,6 +2012,7 @@ function escapeAttr(s){ return escapeHtml(s); }
 
 async function init(){
   document.getElementById('content').innerHTML = '<div class="panel">Cargando...</div>';
+  gastosViewMonth = currentMonthStr();
   await loadData();
   const changed = reprogramOverdue();
   if(changed) await saveTasks();
