@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Gestor de tareas de Nico Llano</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --bg:#f7f7f5;
@@ -32,19 +31,16 @@
   h1{font-size:17px;margin:0 0 10px 0;}
   h2{font-size:15px;margin:0 0 10px 0;color:var(--text);}
 
-  nav{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;}
+  nav{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px;}
   nav button{
-    padding:9px 10px;border:1px solid var(--border);background:var(--panel);
-    border-radius:var(--radius);cursor:pointer;font-size:12.5px;color:var(--text);
-    min-height:40px;flex:1 1 auto;white-space:nowrap;position:relative;
+    padding:9px 6px;border:1px solid var(--border);background:var(--panel);
+    border-radius:var(--radius);cursor:pointer;font-size:12px;color:var(--text);
+    min-height:44px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;
   }
   nav button.active{background:var(--accent);color:#fff;border-color:var(--accent);}
   @media (max-width:480px){
-    nav button{font-size:11.5px;padding:8px 6px;}
+    nav button{font-size:10.5px;padding:8px 4px;}
   }
-
-  .nav-secondary{margin-bottom:14px;}
-  .nav-secondary button{min-height:32px;font-size:11px;padding:6px 8px;font-weight:500;}
 
   .notif-badge{
     position:absolute;top:-6px;right:-6px;background:#ff3b30;color:#fff;
@@ -248,6 +244,7 @@ function iconAction(cls, icon, label, dataAttr){
 let tasks = [];
 let projects = [];
 let currentTab = 'crear';
+let homeSection = null;
 let editingTaskId = null;
 let pendingDeleteId = null;
 let matrixAreaFilter = null;
@@ -263,6 +260,7 @@ let gastosFijos = [];
 let gastosCiclicos = [];
 let gastosExtraordinarios = [];
 let gastosEspera = [];
+let gastosPrestamos = [];
 let gastosSubTab = 'resumen';
 let gastosViewMonth = null;
 let gastosEditingId = null;
@@ -296,58 +294,56 @@ let pendingImportText = '';
 let importConfirmPending = false;
 let importWarnings = [];
 
-// ======================================================
-// CONFIGURACIÓN DE SUPABASE — ya configurado para TareasNico
-// ======================================================
-const SUPABASE_URL = 'https://wfzmpdcxyuskfyjnwmme.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_KGfozOeJvj6vJBzHOTnWVg_wezXkWsH';
-const supabaseClient = (SUPABASE_URL.startsWith('http'))
-  ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : null;
-
-async function kvGet(key){
-  if(!supabaseClient) return null;
-  const { data, error } = await supabaseClient.from('kv_store').select('value').eq('key',key).maybeSingle();
-  if(error) throw error;
-  return data ? data.value : null;
-}
-async function kvSet(key, value){
-  if(!supabaseClient) return;
-  const { error } = await supabaseClient.from('kv_store').upsert({ key, value });
-  if(error) throw error;
-}
-
 async function loadData(){
-  if(!supabaseClient){
-    alert('Falta configurar Supabase: edita SUPABASE_URL y SUPABASE_ANON_KEY en el código.');
-    tasks = []; projects = [];
-    gastosIngresos = []; gastosFijos = []; gastosCiclicos = []; gastosExtraordinarios = []; gastosEspera = [];
-    gastosSaldoInicial = {}; gastosMesesCerrados = {};
-    return;
-  }
-  try{ tasks = (await kvGet('tasks')) || []; }catch(e){ console.error('Error cargando tareas', e); tasks = []; }
-  try{ projects = (await kvGet('projects')) || []; }catch(e){ console.error('Error cargando proyectos', e); projects = []; }
-  try{ gastosIngresos = (await kvGet('gastos_ingresos')) || []; }catch(e){ console.error('Error cargando gastos_ingresos', e); gastosIngresos = []; }
-  try{ gastosFijos = (await kvGet('gastos_fijos')) || []; }catch(e){ console.error('Error cargando gastos_fijos', e); gastosFijos = []; }
-  try{ gastosCiclicos = (await kvGet('gastos_ciclicos')) || []; }catch(e){ console.error('Error cargando gastos_ciclicos', e); gastosCiclicos = []; }
-  try{ gastosExtraordinarios = (await kvGet('gastos_extraordinarios')) || []; }catch(e){ console.error('Error cargando gastos_extraordinarios', e); gastosExtraordinarios = []; }
-  try{ gastosEspera = (await kvGet('gastos_espera')) || []; }catch(e){ console.error('Error cargando gastos_espera', e); gastosEspera = []; }
   try{
-    const parsed = await kvGet('gastos_saldo');
+    const t = await window.storage.get('tasks');
+    tasks = t ? JSON.parse(t.value) : [];
+  }catch(e){ tasks = []; }
+  try{
+    const p = await window.storage.get('projects');
+    projects = p ? JSON.parse(p.value) : [];
+  }catch(e){ projects = []; }
+  try{
+    const g = await window.storage.get('gastos_ingresos');
+    gastosIngresos = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosIngresos = []; }
+  try{
+    const g = await window.storage.get('gastos_fijos');
+    gastosFijos = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosFijos = []; }
+  try{
+    const g = await window.storage.get('gastos_ciclicos');
+    gastosCiclicos = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosCiclicos = []; }
+  try{
+    const g = await window.storage.get('gastos_extraordinarios');
+    gastosExtraordinarios = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosExtraordinarios = []; }
+  try{
+    const g = await window.storage.get('gastos_espera');
+    gastosEspera = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosEspera = []; }
+  try{
+    const g = await window.storage.get('gastos_prestamos');
+    gastosPrestamos = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosPrestamos = []; }
+  try{
+    const g = await window.storage.get('gastos_saldo');
+    const parsed = g ? JSON.parse(g.value) : null;
     gastosSaldoInicial = parsed ? (parsed.inicial||{}) : {};
     gastosMesesCerrados = parsed ? (parsed.cerrados||{}) : {};
-  }catch(e){ console.error('Error cargando gastos_saldo', e); gastosSaldoInicial = {}; gastosMesesCerrados = {}; }
+  }catch(e){ gastosSaldoInicial = {}; gastosMesesCerrados = {}; }
 }
 async function saveTasks(){
-  try{ await kvSet('tasks', tasks); }
+  try{ await window.storage.set('tasks', JSON.stringify(tasks)); }
   catch(e){ console.error('Error guardando tareas', e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
 async function saveProjects(){
-  try{ await kvSet('projects', projects); }
+  try{ await window.storage.set('projects', JSON.stringify(projects)); }
   catch(e){ console.error('Error guardando proyectos', e); }
 }
 async function saveGastosSaldo(){
-  try{ await kvSet('gastos_saldo', { inicial: gastosSaldoInicial, cerrados: gastosMesesCerrados }); }
+  try{ await window.storage.set('gastos_saldo', JSON.stringify({ inicial: gastosSaldoInicial, cerrados: gastosMesesCerrados })); }
   catch(e){ console.error('Error guardando saldo', e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
 async function saveGastos(cat){
@@ -357,8 +353,9 @@ async function saveGastos(cat){
     ciclicos: gastosCiclicos,
     extraordinarios: gastosExtraordinarios,
     espera: gastosEspera,
+    prestamos: gastosPrestamos,
   };
-  try{ await kvSet('gastos_'+cat, map[cat]); }
+  try{ await window.storage.set('gastos_'+cat, JSON.stringify(map[cat])); }
   catch(e){ console.error('Error guardando gastos_'+cat, e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
 
@@ -389,25 +386,60 @@ function projectsByArea(area){
 
 // ---------- Tabs ----------
 function renderTabs(){
-  const primary = [
-    ['crear','➕ Crear tarea'],
-    ['organizar','📥 Organizar tareas'],
-    ['hoy','📅 HOY'],
-    ['proyectos','📁 Proyectos y tareas'],
-    ['gastos','💰 Gastos'],
-  ];
-  const secondary = [
-    ['datos','📊 Datos'],
-  ];
+  const nav = document.getElementById('tabs');
+  const navSec = document.getElementById('tabs-secondary');
+  if(homeSection===null){
+    nav.innerHTML = '';
+    navSec.innerHTML = '';
+    return;
+  }
+
+  let primary, secondary;
+  if(homeSection==='tareas'){
+    primary = [
+      ['crear','➕ Crear tarea'],
+      ['organizar','📥 Organizar tareas'],
+      ['hoy','📅 HOY'],
+      ['proyectos','📁 Proyectos'],
+    ];
+    secondary = [
+      ['matriz-area','🗂️ Tareas por tema'],
+      ['matriz-general','📋 Todas las tareas'],
+      ['completadas','✅ ¡Lo hice!'],
+      ['datos','📊 Datos'],
+    ];
+  } else {
+    primary = [
+      ['g-resumen','📊 Resumen'],
+      ['g-dia','📅 Pagos por hacer'],
+      ['g-ingresos','💵 Ingresos'],
+      ['g-fijos','📌 Pagos Fijos'],
+    ];
+    secondary = [
+      ['g-ciclicos','🐷 Ahorros'],
+      ['g-imprevistos','⚡ Imprevistos'],
+      ['g-espera','⏳ Lo que debo'],
+      ['g-prestamos','🤝 Lo que me deben'],
+    ];
+  }
   const pendCount = tasks.filter(t=>t.status==='Por organizar').length;
 
-  const nav = document.getElementById('tabs');
   nav.innerHTML = '';
-  primary.forEach(([key,label])=>{
+  navSec.innerHTML = '';
+
+  const homeBtn = document.createElement('button');
+  homeBtn.textContent = '🏠 Inicio';
+  homeBtn.title = 'Inicio';
+  homeBtn.setAttribute('aria-label','Inicio');
+  homeBtn.onclick = ()=>{ homeSection=null; render(); };
+  nav.appendChild(homeBtn);
+
+  const allTabs = primary.concat(secondary);
+  allTabs.forEach(([key,label])=>{
     const b = document.createElement('button');
     b.textContent = label;
     if(key===currentTab) b.className='active';
-    b.onclick = ()=>{ currentTab=key; editingTaskId=null; pendingDeleteId=null; render(); };
+    b.onclick = ()=>{ currentTab=key; editingTaskId=null; pendingDeleteId=null; gastosEditingId=null; gastosPendingDeleteId=null; render(); };
     if(key==='organizar' && pendCount>0){
       const badge = document.createElement('span');
       badge.className = 'notif-badge';
@@ -416,32 +448,40 @@ function renderTabs(){
     }
     nav.appendChild(b);
   });
+}
 
-  const navSec = document.getElementById('tabs-secondary');
-  navSec.innerHTML = '';
-  if(currentTab !== 'crear'){
-    secondary.forEach(([key,label])=>{
-      const b = document.createElement('button');
-      b.textContent = label;
-      if(key===currentTab) b.className='active';
-      b.onclick = ()=>{ currentTab=key; editingTaskId=null; pendingDeleteId=null; render(); };
-      navSec.appendChild(b);
-    });
-  }
+function viewHome(){
+  return `
+  <div class="panel" style="text-align:center;padding:36px 16px;">
+    <h2 style="margin-bottom:20px;">¿Qué quieres hacer?</h2>
+    <button type="button" class="primary" data-home-select="tareas" style="width:100%;padding:18px;font-size:16px;margin-bottom:12px;">🗂️ Tareas</button>
+    <button type="button" class="primary" data-home-select="gastos" style="width:100%;padding:18px;font-size:16px;">💰 Gastos</button>
+  </div>`;
 }
 
 function render(){
   renderTabs();
   const c = document.getElementById('content');
-  if(currentTab==='crear') c.innerHTML = viewCrear();
-  else if(currentTab==='organizar') c.innerHTML = viewOrganizar();
-  else if(currentTab==='hoy') c.innerHTML = viewHoy();
-  else if(currentTab==='matriz-area') c.innerHTML = viewMatrizArea();
-  else if(currentTab==='matriz-general') c.innerHTML = viewMatrizGeneral();
-  else if(currentTab==='completadas') c.innerHTML = viewCompletadas();
-  else if(currentTab==='proyectos') c.innerHTML = viewProyectos();
-  else if(currentTab==='datos') c.innerHTML = viewDatos();
-  else if(currentTab==='gastos') c.innerHTML = viewGastos();
+  if(homeSection===null){ c.innerHTML = viewHome(); bindEvents(); return; }
+  if(homeSection==='tareas'){
+    if(currentTab==='crear') c.innerHTML = viewCrear();
+    else if(currentTab==='organizar') c.innerHTML = viewOrganizar();
+    else if(currentTab==='hoy') c.innerHTML = viewHoy();
+    else if(currentTab==='matriz-area') c.innerHTML = viewMatrizArea();
+    else if(currentTab==='matriz-general') c.innerHTML = viewMatrizGeneral();
+    else if(currentTab==='completadas') c.innerHTML = viewCompletadas();
+    else if(currentTab==='proyectos') c.innerHTML = viewProyectos();
+    else if(currentTab==='datos') c.innerHTML = viewDatos();
+  } else {
+    if(currentTab==='g-resumen') c.innerHTML = viewGastosResumen();
+    else if(currentTab==='g-dia') c.innerHTML = viewGastosDia();
+    else if(currentTab==='g-ingresos') c.innerHTML = viewGastosSimpleList('ingresos', gastosIngresos, 'Ingresos mensuales recurrentes');
+    else if(currentTab==='g-fijos') c.innerHTML = viewGastosSimpleList('fijos', gastosFijos, 'Pagos Fijos');
+    else if(currentTab==='g-ciclicos') c.innerHTML = viewGastosCiclicos();
+    else if(currentTab==='g-imprevistos') c.innerHTML = viewGastosDatedList('extraordinarios', gastosExtraordinarios, 'Imprevistos', true);
+    else if(currentTab==='g-espera') c.innerHTML = viewGastosEspera();
+    else if(currentTab==='g-prestamos') c.innerHTML = viewGastosPrestamos();
+  }
   bindEvents();
 }
 
@@ -836,7 +876,7 @@ function viewCompletadas(){
 
 // ---------- Interfaz Proyectos ----------
 function viewProyectos(){
-  let html = `<div class="panel"><h2>Proyectos y tareas</h2><div class="status-msg">Toca un proyecto para ver y editar sus actividades.</div></div>`;
+  let html = `<div class="panel"><h2>Proyectos</h2><div class="status-msg">Toca un proyecto para ver y editar sus actividades.</div></div>`;
   AREAS.forEach(area=>{
     const ps = projectsByArea(area);
     html += `<div class="area-block"><div class="area-title">${AREA_LABEL[area]}</div>`;
@@ -887,54 +927,10 @@ function viewProyectos(){
     html += `</div>`;
   });
 
-  const sections = [
-    ['tema','🗂️ Tareas por tema', viewMatrizArea],
-    ['todas','📋 Todas las tareas', viewMatrizGeneral],
-    ['hechas','✅ ¡Lo hice!', viewCompletadas],
-  ];
-  html += `<div class="panel"><h2>Más vistas</h2>`;
-  sections.forEach(([key,label,fn])=>{
-    const isOpen = expandedSection===key;
-    html += `<button class="secondary" data-toggle-section="${key}" style="width:100%;margin-bottom:6px;">${label} ${isOpen?'▲':'▼'}</button>`;
-  });
-  html += `</div>`;
-  sections.forEach(([key,label,fn])=>{
-    if(expandedSection===key){
-      html += fn();
-    }
-  });
-
   return html;
 }
 
 // ---------- Interfaz Gastos ----------
-function viewGastos(){
-  let html = renderGastosSubNav();
-  if(gastosSubTab==='resumen') html += viewGastosResumen();
-  else if(gastosSubTab==='ingresos') html += viewGastosSimpleList('ingresos', gastosIngresos, 'Ingresos mensuales recurrentes');
-  else if(gastosSubTab==='fijos') html += viewGastosSimpleList('fijos', gastosFijos, 'Gastos fijos mensuales');
-  else if(gastosSubTab==='ciclicos') html += viewGastosCiclicos();
-  else if(gastosSubTab==='extraordinarios') html += viewGastosDatedList('extraordinarios', gastosExtraordinarios, 'Gastos extraordinarios', true);
-  else if(gastosSubTab==='espera') html += viewGastosDatedList('espera', gastosEspera, 'Pagos en espera', false);
-  return html;
-}
-function renderGastosSubNav(){
-  const tabs = [
-    ['resumen','📊 Resumen'],
-    ['ingresos','💵 Ingresos'],
-    ['fijos','📌 Fijos'],
-    ['ciclicos','🐷 Cíclicos'],
-    ['extraordinarios','⚡ Extraordinarios'],
-    ['espera','⏳ En espera'],
-  ];
-  let html = '<div class="icon-actions" style="margin-bottom:12px;flex-wrap:wrap;">';
-  tabs.forEach(([key,label])=>{
-    const active = gastosSubTab===key;
-    html += `<button type="button" class="secondary" data-gastos-tab="${key}" style="${active?'background:var(--accent);color:#fff;border-color:var(--accent);':''}">${label}</button>`;
-  });
-  html += '</div>';
-  return html;
-}
 function renderMonthNav(){
   return `
   <div class="panel" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
@@ -953,8 +949,12 @@ function viewGastosResumen(){
   const today = todayStr();
   const esperaVencidos = gastosEspera.filter(e=>e.status==='Pendiente' && e.date && e.date < today);
   const totalEspera = esperaVencidos.reduce((s,e)=>s+Number(e.amount||0),0);
+  const prestamosDelMes = gastosPrestamos.filter(p=>p.date && p.date.slice(0,7)===gastosViewMonth);
+  const totalPrestamosSalida = prestamosDelMes.reduce((s,p)=>s+Number(p.amount||0),0);
+  const cobrosDelMes = gastosPrestamos.reduce((s,p)=>s + (p.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===gastosViewMonth).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
+  const prestamosPendientes = gastosPrestamos.filter(p=>esperaSaldo(p) > 0);
   const saldoInicial = Number(gastosSaldoInicial[gastosViewMonth]||0);
-  const disponible = saldoInicial + totalIngresos - (totalFijos + totalProvisiones + totalExtraordinarios + totalEspera);
+  const disponible = saldoInicial + totalIngresos + cobrosDelMes - (totalFijos + totalProvisiones + totalExtraordinarios + totalEspera + totalPrestamosSalida);
   const mesCerrado = !!gastosMesesCerrados[gastosViewMonth];
 
   const ingresosPendientes = gastosIngresos.filter(i=>!(i.paidMonths && i.paidMonths[gastosViewMonth]));
@@ -987,8 +987,10 @@ function viewGastosResumen(){
     <div class="money-row"><span>Ingresos</span><span class="money-positive">${formatCOP(totalIngresos)}</span></div>
     <div class="money-row"><span>Gastos fijos</span><span class="money-negative">-${formatCOP(totalFijos)}</span></div>
     <div class="money-row"><span>Provisiones (cíclicos)</span><span class="money-negative">-${formatCOP(totalProvisiones)}</span></div>
-    <div class="money-row"><span>Extraordinarios pendientes (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalExtraordinarios)}</span></div>
+    <div class="money-row"><span>Imprevistos pendientes (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalExtraordinarios)}</span></div>
     <div class="money-row"><span>En espera vencidos (hoy)</span><span class="money-negative">-${formatCOP(totalEspera)}</span></div>
+    <div class="money-row"><span>Préstamos hechos (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalPrestamosSalida)}</span></div>
+    <div class="money-row"><span>Cobros de préstamos (${monthLabel(gastosViewMonth)})</span><span class="money-positive">+${formatCOP(cobrosDelMes)}</span></div>
     <div class="money-row total"><span>Dinero disponible</span><span class="${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</span></div>
   </div>`;
 
@@ -1015,32 +1017,20 @@ function viewGastosResumen(){
     });
     html += `</div>`;
   }
-  if(ingresosPendientes.length){
+  if(ingresosPendientes.length || prestamosPendientes.length){
     html += `<div class="panel"><h2>🔔 Pendiente por cobrar</h2>`;
     ingresosPendientes.forEach(i=>{
       const info = gastosMonthlyInfo('ingresos', i, gastosViewMonth);
       html += renderGastosPendingRow(i.name, info.plan);
     });
+    prestamosPendientes.forEach(p=>{
+      html += renderGastosPendingRow(p.name+' (préstamo)', esperaSaldo(p));
+    });
     html += `</div>`;
   }
 
-  html += `<div class="panel"><h2>Ingresos de ${monthLabel(gastosViewMonth)}</h2>`;
-  if(gastosIngresos.length===0) html += `<div class="empty">Sin ingresos registrados en el plan.</div>`;
-  gastosIngresos.forEach(i=>{ html += renderGastosInlineRow('ingresos', i); });
-  html += `</div>`;
-
-  html += `<div class="panel"><h2>Fijos de ${monthLabel(gastosViewMonth)}</h2>`;
-  if(gastosFijos.length===0) html += `<div class="empty">Sin fijos registrados en el plan.</div>`;
-  gastosFijos.forEach(i=>{ html += i.isProvision ? renderGastosProvisionRow(i) : renderGastosInlineRow('fijos', i); });
-  html += `</div>`;
-
-  html += `<div class="panel"><h2>Provisiones cíclicas de ${monthLabel(gastosViewMonth)}</h2>`;
-  if(gastosCiclicos.length===0) html += `<div class="empty">Sin cíclicos registrados en el plan.</div>`;
-  gastosCiclicos.forEach(c=>{ html += renderGastosReconcileItem('ciclicos', c); });
-  html += `</div>`;
-
   if(extraordinariosMes.length){
-    html += `<div class="panel"><h2>Extraordinarios de ${monthLabel(gastosViewMonth)}</h2>`;
+    html += `<div class="panel"><h2>Imprevistos de ${monthLabel(gastosViewMonth)}</h2>`;
     extraordinariosMes.forEach(e=>{
       html += `<div class="task-card"><div class="task-top"><div class="task-name">${escapeHtml(e.name)}</div><div class="task-name">${formatCOP(e.amount)}</div></div></div>`;
     });
@@ -1116,7 +1106,7 @@ function renderGastosProvisionManage(item){
   const txListHtml = txs.length ? txs.map(t=>`
     <div class="task-card" style="padding:8px 10px;">
       <div class="task-top">
-        <div class="task-name" style="font-size:12.5px;font-weight:500;">${t.date}</div>
+        <div class="task-name" style="font-size:12.5px;font-weight:500;">${escapeHtml(t.desc||item.name)} <span style="color:var(--muted);font-weight:400;">· ${t.date}</span></div>
         <div style="display:flex;align-items:center;gap:6px;">
           <div class="task-name" style="font-size:12.5px;">${formatCOP(t.amount)}</div>
           <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:12px;" data-gastos-provision-delete-tx="fijos:${item.id}:${t.id}" title="Eliminar gasto">🗑️</button>
@@ -1126,6 +1116,8 @@ function renderGastosProvisionManage(item){
 
   const addFormHtml = isAdding ? `
     <div style="margin-top:8px;">
+      <label>Asunto</label>
+      <input type="text" id="gs_prov_desc_${item.id}" value="${escapeAttr(item.name)}">
       <label>Monto del gasto</label>
       <input type="text" id="gs_prov_amount_${item.id}" placeholder="Monto" inputmode="numeric">
       <div class="icon-actions" style="margin-top:8px;">
@@ -1158,6 +1150,7 @@ function renderGastosProvisionRow(item){
 
   const addFormHtml = isAdding ? `
     <div style="margin-top:8px;">
+      <input type="text" id="gs_prov_desc_${item.id}" value="${escapeAttr(item.name)}" style="margin-bottom:6px;">
       <input type="text" id="gs_prov_amount_${item.id}" placeholder="Monto del gasto" inputmode="numeric">
       <div class="icon-actions" style="margin-top:8px;">
         ${iconAction('save','save','Agregar', `data-gastos-provision-add="${item.id}"`)}
@@ -1312,12 +1305,14 @@ async function onGastosTogglePaid(key){
 async function onGastosProvisionAdd(id){
   const item = gastosFijos.find(x=>x.id===id);
   if(!item) return;
+  const descEl = document.getElementById('gs_prov_desc_'+id);
   const amountEl = document.getElementById('gs_prov_amount_'+id);
+  const desc = (descEl && descEl.value.trim()) ? descEl.value.trim() : item.name;
   const amount = parseMoney(amountEl.value);
   if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
   if(!item.transactions) item.transactions = {};
   if(!item.transactions[gastosViewMonth]) item.transactions[gastosViewMonth] = [];
-  item.transactions[gastosViewMonth].push({ id:uid(), amount, date: todayStr() });
+  item.transactions[gastosViewMonth].push({ id:uid(), desc, amount, date: todayStr() });
   gastosEditingId = null;
   await saveGastos('fijos');
   render();
@@ -1327,6 +1322,30 @@ async function onGastosProvisionDeleteTx(key){
   const item = gastosListFor(cat).find(x=>x.id===id);
   if(!item || !item.transactions || !item.transactions[gastosViewMonth]) return;
   item.transactions[gastosViewMonth] = item.transactions[gastosViewMonth].filter(t=>t.id!==txId);
+  await saveGastos(cat);
+  render();
+}
+
+async function onGastosAbonoAdd(key){
+  const [cat, id] = key.split(':');
+  const item = gastosListFor(cat).find(x=>x.id===id);
+  if(!item) return;
+  const amountEl = document.getElementById('gs_abono_amount_'+id);
+  const amount = parseMoney(amountEl.value);
+  if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
+  if(!item.abonos) item.abonos = [];
+  item.abonos.push({ id:uid(), amount, date: todayStr() });
+  item.status = esperaSaldo(item) <= 0 ? 'Pagado' : 'Pendiente';
+  gastosEditingId = null;
+  await saveGastos(cat);
+  render();
+}
+async function onGastosAbonoDelete(key){
+  const [cat, id, abonoId] = key.split(':');
+  const item = gastosListFor(cat).find(x=>x.id===id);
+  if(!item || !item.abonos) return;
+  item.abonos = item.abonos.filter(a=>a.id!==abonoId);
+  item.status = esperaSaldo(item) <= 0 ? 'Pagado' : 'Pendiente';
   await saveGastos(cat);
   render();
 }
@@ -1369,7 +1388,10 @@ function viewGastosSimpleList(cat, list, title){
       <div><input type="text" id="gs_new_name_${cat}" placeholder="Nombre"></div>
       <div><input type="text" id="gs_new_amount_${cat}" placeholder="Monto" inputmode="numeric"></div>
     </div>
-    ${cat==='fijos' ? `<label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:var(--muted);"><input type="checkbox" id="gs_new_isprovision_fijos" style="width:auto;min-height:auto;"> Es una provisión (voy registrando gastos sueltos, ej. transporte, restaurante, servicios)</label>` : ''}
+    ${cat==='fijos' ? `
+    <label>Día del mes en que vence (opcional, ej. 15)</label>
+    <input type="text" id="gs_new_dueday_fijos" inputmode="numeric" placeholder="1-31" maxlength="2" style="max-width:100px;">
+    <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:var(--muted);"><input type="checkbox" id="gs_new_isprovision_fijos" style="width:auto;min-height:auto;"> Es una provisión (voy registrando gastos sueltos, ej. transporte, restaurante, servicios)</label>` : ''}
     <button type="button" class="primary" data-gastos-add="${cat}" style="width:100%;margin-top:8px;">➤ Agregar</button>
   </div>`;
   html += `<div class="panel">`;
@@ -1394,6 +1416,8 @@ function renderGastosSimpleItem(cat, item){
       <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
       <label>Monto</label>
       <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
+      ${cat==='fijos' ? `<label>Día del mes en que vence (opcional)</label>
+      <input type="text" id="gs_edit_dueday_${item.id}" value="${item.dueDay||''}" inputmode="numeric" maxlength="2" style="max-width:100px;">` : ''}
       <div class="icon-actions" style="margin-top:8px;">
         ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
         ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
@@ -1405,10 +1429,140 @@ function renderGastosSimpleItem(cat, item){
     : iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`) + iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
   return `<div class="task-card">
     <div class="task-top">
-      <div class="task-name">${escapeHtml(item.name)}</div>
+      <div>
+        <div class="task-name">${escapeHtml(item.name)}</div>
+        ${(cat==='fijos' && item.dueDay) ? `<div class="task-meta">Vence el día ${item.dueDay} de cada mes</div>` : ''}
+      </div>
       <div class="task-name">${formatCOP(item.amount)}</div>
     </div>
     <div class="icon-actions" style="margin-top:8px;">${actions}</div>
+  </div>`;
+}
+
+function esperaAbonado(item){
+  return (item.abonos||[]).reduce((s,a)=>s+Number(a.amount||0),0);
+}
+function esperaSaldo(item){
+  return Number(item.amount||0) - esperaAbonado(item);
+}
+const LABELS_ESPERA = { montoLabel:'Monto total', abonadoLabel:'Abonado', accionLabel:'Registrar abono', icono:'💵' };
+const LABELS_PRESTAMOS = { montoLabel:'Monto prestado', abonadoLabel:'Cobrado', accionLabel:'Registrar cobro', icono:'💰' };
+
+function viewGastosEspera(){
+  let html = `<div class="panel">
+    <h2>Lo que debo</h2>
+    <div class="status-msg">Registra el valor total y ve haciendo abonos — el saldo baja solo hasta llegar a $0, donde se marca pagado automáticamente.</div>
+    <div class="row">
+      <div><input type="text" id="gs_new_name_espera" placeholder="Nombre"></div>
+      <div><input type="text" id="gs_new_amount_espera" placeholder="Monto total" inputmode="numeric"></div>
+    </div>
+    <label>Fecha (opcional, si la sabes)</label>
+    <input type="date" id="gs_new_date_espera">
+    <button type="button" class="primary" data-gastos-add="espera" style="width:100%;margin-top:8px;">➤ Agregar</button>
+  </div>`;
+  html += `<div class="panel">`;
+  const sorted = gastosEspera.slice().sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
+  if(sorted.length===0) html += `<div class="empty">Sin registros.</div>`;
+  sorted.forEach(item=>{ html += renderGastosDeudaItem('espera', item, LABELS_ESPERA); });
+  html += `</div>`;
+  return html;
+}
+
+function viewGastosPrestamos(){
+  let html = `<div class="panel">
+    <h2>Lo que me deben</h2>
+    <div class="status-msg">Al registrar el préstamo, sale de tu disponible ese mes. Cada cobro que registres entra como si fuera un ingreso. Al llegar a $0 se marca pagado solo.</div>
+    <div class="row">
+      <div><input type="text" id="gs_new_name_prestamos" placeholder="Nombre (a quién le prestas)"></div>
+      <div><input type="text" id="gs_new_amount_prestamos" placeholder="Monto prestado" inputmode="numeric"></div>
+    </div>
+    <label>Fecha del préstamo</label>
+    <input type="date" id="gs_new_date_prestamos">
+    <button type="button" class="primary" data-gastos-add="prestamos" style="width:100%;margin-top:8px;">➤ Agregar</button>
+  </div>`;
+  html += `<div class="panel">`;
+  const sorted = gastosPrestamos.slice().sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
+  if(sorted.length===0) html += `<div class="empty">Sin préstamos registrados.</div>`;
+  sorted.forEach(item=>{ html += renderGastosDeudaItem('prestamos', item, LABELS_PRESTAMOS); });
+  html += `</div>`;
+  return html;
+}
+
+function renderGastosDeudaItem(cat, item, labels){
+  const key = cat+':'+item.id;
+  const isEditing = gastosEditingId===key;
+  const isConfirmingDelete = gastosPendingDeleteId===key;
+  const isAbonando = gastosEditingId === ('abono:'+cat+':'+item.id);
+
+  if(isEditing){
+    return `<div class="task-card">
+      <label>Nombre</label>
+      <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
+      <label>${labels.montoLabel}</label>
+      <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
+      <label>Fecha</label>
+      <input type="date" id="gs_edit_date_${item.id}" value="${item.date||''}">
+      <div class="icon-actions" style="margin-top:8px;">
+        ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
+        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+      </div>
+    </div>`;
+  }
+
+  const total = Number(item.amount||0);
+  const abonado = esperaAbonado(item);
+  const saldo = esperaSaldo(item);
+  const pct = total>0 ? Math.min(100, Math.round((abonado/total)*100)) : 0;
+  const pagado = saldo <= 0;
+  const isVencido = !pagado && item.date && item.date < todayStr();
+  const abonos = (item.abonos||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+
+  let actions;
+  if(isConfirmingDelete){
+    actions = iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`);
+  } else {
+    actions = iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`);
+    if(!pagado) actions += `<button type="button" class="icon-btn" title="${labels.accionLabel}" aria-label="${labels.accionLabel}" data-gastos-abono-open="${cat}:${item.id}">${labels.icono}</button>`;
+    actions += iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
+  }
+
+  const abonoFormHtml = isAbonando ? `
+    <div style="margin-top:8px;">
+      <label>Monto</label>
+      <input type="text" id="gs_abono_amount_${item.id}" placeholder="Monto" inputmode="numeric">
+      <div class="icon-actions" style="margin-top:8px;">
+        ${iconAction('save','save','Agregar', `data-gastos-abono-add="${cat}:${item.id}"`)}
+        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+      </div>
+    </div>` : '';
+
+  const abonosListHtml = abonos.length ? abonos.map(a=>`
+    <div class="task-card" style="padding:8px 10px;">
+      <div class="task-top">
+        <div class="task-name" style="font-size:12.5px;">${a.date}</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div class="task-name" style="font-size:12.5px;">${formatCOP(a.amount)}</div>
+          <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:12px;" data-gastos-abono-delete="${cat}:${item.id}:${a.id}" title="Eliminar">🗑️</button>
+        </div>
+      </div>
+    </div>`).join('') : '';
+
+  return `<div class="task-card ${pagado?'status-terminada':(isVencido?'status-organizar':'status-sin-iniciar')}">
+    <div class="task-top">
+      <div>
+        <div class="task-name">${escapeHtml(item.name)}</div>
+        <div class="task-meta">
+          <span class="badge ${pagado?'status-terminada':(isVencido?'status-organizar':'status-sin-iniciar')}">${pagado?'Pagado':(isVencido?'Vencido':'Pendiente')}</span>
+          ${item.date?`<span>${item.date}</span>`:''}
+        </div>
+      </div>
+      <div class="task-name">${formatCOP(total)}</div>
+    </div>
+    <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
+    <div class="task-meta" style="margin-top:4px;">${labels.abonadoLabel}: ${formatCOP(abonado)} · Saldo: ${formatCOP(saldo)}</div>
+    <div class="icon-actions" style="margin-top:8px;">${actions}</div>
+    ${abonoFormHtml}
+    ${abonosListHtml ? `<div style="margin-top:8px;">${abonosListHtml}</div>` : ''}
   </div>`;
 }
 
@@ -1476,9 +1630,58 @@ function renderGastosDatedItem(cat, item){
   </div>`;
 }
 
+function viewGastosDia(){
+  const today = todayStr();
+  const todayDay = new Date().getDate();
+  const mesActual = currentMonthStr();
+  let html = `<div class="panel"><h2>Pagos por hacer</h2><div class="status-msg">Lo que vence hoy, y todo lo demás que sigue pendiente de pagar.</div></div>`;
+
+  const fijosHoy = gastosFijos.filter(i=>!i.isProvision && i.dueDay===todayDay);
+  const ciclicosHoy = gastosCiclicos.filter(c=>c.nextDueDate===today);
+  const imprevistosHoy = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date===today);
+  const esperaVencidosHoy = gastosEspera.filter(e=>e.status==='Pendiente' && e.date && e.date < today);
+
+  const anyHoy = fijosHoy.length || ciclicosHoy.length || imprevistosHoy.length || esperaVencidosHoy.length;
+  html += `<div class="panel"><h2>🔴 Vence hoy</h2>`;
+  if(!anyHoy){
+    html += `<div class="empty">Nada vence hoy.</div>`;
+  } else {
+    fijosHoy.forEach(i=>{ html += renderGastosPendingRow('📌 '+i.name, i.amount); });
+    ciclicosHoy.forEach(c=>{
+      const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
+      html += renderGastosPendingRow('🐷 '+c.name, provision);
+    });
+    imprevistosHoy.forEach(e=>{ html += renderGastosPendingRow('⚡ '+e.name, e.amount); });
+    esperaVencidosHoy.forEach(e=>{ html += renderGastosPendingRow('⏳ '+e.name+' (vencido desde '+e.date+')', esperaSaldo(e)); });
+  }
+  html += `</div>`;
+
+  const fijosPend = gastosFijos.filter(i=>!i.isProvision && !fijosHoy.includes(i) && !(i.paidMonths && i.paidMonths[mesActual]));
+  const ciclicosPend = gastosCiclicos.filter(c=>!ciclicosHoy.includes(c) && !(c.contributions && c.contributions[mesActual]!==undefined));
+  const imprevistosPend = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && !imprevistosHoy.includes(e));
+  const esperaPend = gastosEspera.filter(e=>e.status==='Pendiente' && !esperaVencidosHoy.includes(e) && esperaSaldo(e)>0);
+
+  const anyPend = fijosPend.length || ciclicosPend.length || imprevistosPend.length || esperaPend.length;
+  html += `<div class="panel"><h2>🟡 Otros pendientes</h2>`;
+  if(!anyPend){
+    html += `<div class="empty">No tienes más pagos pendientes.</div>`;
+  } else {
+    fijosPend.forEach(i=>{ html += renderGastosPendingRow('📌 '+i.name+(i.dueDay?` (vence el ${i.dueDay})`:''), i.amount); });
+    ciclicosPend.forEach(c=>{
+      const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
+      html += renderGastosPendingRow('🐷 '+c.name+(c.nextDueDate?` (próx. ${c.nextDueDate})`:''), provision);
+    });
+    imprevistosPend.forEach(e=>{ html += renderGastosPendingRow('⚡ '+e.name+(e.date?` (${e.date})`:''), e.amount); });
+    esperaPend.forEach(e=>{ html += renderGastosPendingRow('⏳ '+e.name+(e.date?` (vence ${e.date})`:''), esperaSaldo(e)); });
+  }
+  html += `</div>`;
+
+  return html;
+}
+
 function viewGastosCiclicos(){
   let html = `<div class="panel">
-    <h2>Gastos cíclicos (provisionados)</h2>
+    <h2>Ahorros</h2>
     <div class="status-msg">Cada uno arma una "alcancía": aporta la provisión mensual hasta completar el monto total, y luego lo marcas como pagado.</div>
     <div class="row">
       <div><input type="text" id="gs_new_name_ciclicos" placeholder="Nombre"></div>
@@ -1713,6 +1916,14 @@ async function runImport(){
 
 // ---------- Eventos ----------
 function bindEvents(){
+  document.querySelectorAll('[data-home-select]').forEach(b=>{
+    b.onclick = ()=>{
+      const section = b.getAttribute('data-home-select');
+      homeSection = section;
+      currentTab = section==='tareas' ? 'crear' : 'g-resumen';
+      render();
+    };
+  });
   document.querySelectorAll('[data-crear-area]').forEach(b=>{
     const area = b.getAttribute('data-crear-area');
     b.onclick = ()=>onCrearTarea(area);
@@ -1896,6 +2107,15 @@ function bindEvents(){
   });
   document.querySelectorAll('[data-gastos-provision-delete-tx]').forEach(b=>{
     b.onclick = ()=>onGastosProvisionDeleteTx(b.getAttribute('data-gastos-provision-delete-tx'));
+  });
+  document.querySelectorAll('[data-gastos-abono-open]').forEach(b=>{
+    b.onclick = ()=>{ gastosEditingId = 'abono:'+b.getAttribute('data-gastos-abono-open'); render(); };
+  });
+  document.querySelectorAll('[data-gastos-abono-add]').forEach(b=>{
+    b.onclick = ()=>onGastosAbonoAdd(b.getAttribute('data-gastos-abono-add'));
+  });
+  document.querySelectorAll('[data-gastos-abono-delete]').forEach(b=>{
+    b.onclick = ()=>onGastosAbonoDelete(b.getAttribute('data-gastos-abono-delete'));
   });
   document.querySelectorAll('[data-gastos-edit-saldo]').forEach(b=>{
     b.onclick = ()=>{ gastosEditingId = 'saldo'; render(); };
@@ -2110,6 +2330,7 @@ function gastosListFor(cat){
   if(cat==='ciclicos') return gastosCiclicos;
   if(cat==='extraordinarios') return gastosExtraordinarios;
   if(cat==='espera') return gastosEspera;
+  if(cat==='prestamos') return gastosPrestamos;
   return [];
 }
 function parseMoney(v){
@@ -2129,15 +2350,20 @@ async function onGastosAdd(cat){
     if(!period || period<1){ alert('Indica cada cuántos meses se repite (ej. 6).'); return; }
     gastosCiclicos.push({ id:uid(), name, totalAmount:amount, periodMonths:period, nextDueDate:date, contributions:{} });
     await saveGastos('ciclicos');
-  } else if(cat==='extraordinarios' || cat==='espera'){
+  } else if(cat==='extraordinarios' || cat==='espera' || cat==='prestamos'){
     const date = document.getElementById('gs_new_date_'+cat).value || null;
-    if(cat==='extraordinarios' && !date){ alert('Indica la fecha del gasto extraordinario.'); return; }
-    gastosListFor(cat).push({ id:uid(), name, amount, date, status:'Pendiente' });
+    if((cat==='extraordinarios' || cat==='prestamos') && !date){ alert('Indica la fecha.'); return; }
+    gastosListFor(cat).push({ id:uid(), name, amount, date, status:'Pendiente', abonos:[] });
     await saveGastos(cat);
   } else {
     const isProvision = cat==='fijos' && !!document.getElementById('gs_new_isprovision_fijos') && document.getElementById('gs_new_isprovision_fijos').checked;
     const newItem = { id:uid(), name, amount, overrides:{}, paidMonths:{} };
     if(isProvision){ newItem.isProvision = true; newItem.transactions = {}; }
+    if(cat==='fijos'){
+      const dueDayEl = document.getElementById('gs_new_dueday_fijos');
+      const dueDay = dueDayEl ? parseInt(dueDayEl.value,10) : NaN;
+      if(dueDay>=1 && dueDay<=31) newItem.dueDay = dueDay;
+    }
     gastosListFor(cat).push(newItem);
     await saveGastos(cat);
   }
@@ -2174,6 +2400,11 @@ async function onGastosSaveEdit(key){
     item.amount = amount;
     const dateEl = document.getElementById('gs_edit_date_'+id);
     if(dateEl) item.date = dateEl.value || null;
+    if(cat==='fijos'){
+      const dueDayEl = document.getElementById('gs_edit_dueday_'+id);
+      const dueDay = dueDayEl ? parseInt(dueDayEl.value,10) : NaN;
+      item.dueDay = (dueDay>=1 && dueDay<=31) ? dueDay : null;
+    }
   }
 
   gastosEditingId = null;
