@@ -267,6 +267,8 @@ let gastosSubTab = 'resumen';
 let gastosViewMonth = null;
 let gastosEditingId = null;
 let gastosPendingDeleteId = null;
+let gastosSaldoInicial = {};
+let gastosMesesCerrados = {};
 
 function monthStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 function currentMonthStr(){ return monthStr(new Date()); }
@@ -320,6 +322,7 @@ async function loadData(){
     alert('Falta configurar Supabase: edita SUPABASE_URL y SUPABASE_ANON_KEY en el código.');
     tasks = []; projects = [];
     gastosIngresos = []; gastosFijos = []; gastosCiclicos = []; gastosExtraordinarios = []; gastosEspera = [];
+    gastosSaldoInicial = {}; gastosMesesCerrados = {};
     return;
   }
   try{ tasks = (await kvGet('tasks')) || []; }catch(e){ console.error('Error cargando tareas', e); tasks = []; }
@@ -329,6 +332,11 @@ async function loadData(){
   try{ gastosCiclicos = (await kvGet('gastos_ciclicos')) || []; }catch(e){ console.error('Error cargando gastos_ciclicos', e); gastosCiclicos = []; }
   try{ gastosExtraordinarios = (await kvGet('gastos_extraordinarios')) || []; }catch(e){ console.error('Error cargando gastos_extraordinarios', e); gastosExtraordinarios = []; }
   try{ gastosEspera = (await kvGet('gastos_espera')) || []; }catch(e){ console.error('Error cargando gastos_espera', e); gastosEspera = []; }
+  try{
+    const parsed = await kvGet('gastos_saldo');
+    gastosSaldoInicial = parsed ? (parsed.inicial||{}) : {};
+    gastosMesesCerrados = parsed ? (parsed.cerrados||{}) : {};
+  }catch(e){ console.error('Error cargando gastos_saldo', e); gastosSaldoInicial = {}; gastosMesesCerrados = {}; }
 }
 async function saveTasks(){
   try{ await kvSet('tasks', tasks); }
@@ -337,6 +345,10 @@ async function saveTasks(){
 async function saveProjects(){
   try{ await kvSet('projects', projects); }
   catch(e){ console.error('Error guardando proyectos', e); }
+}
+async function saveGastosSaldo(){
+  try{ await kvSet('gastos_saldo', { inicial: gastosSaldoInicial, cerrados: gastosMesesCerrados }); }
+  catch(e){ console.error('Error guardando saldo', e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
 async function saveGastos(cat){
   const map = {
@@ -941,22 +953,48 @@ function viewGastosResumen(){
   const today = todayStr();
   const esperaVencidos = gastosEspera.filter(e=>e.status==='Pendiente' && e.date && e.date < today);
   const totalEspera = esperaVencidos.reduce((s,e)=>s+Number(e.amount||0),0);
-  const disponible = totalIngresos - (totalFijos + totalProvisiones + totalExtraordinarios + totalEspera);
+  const saldoInicial = Number(gastosSaldoInicial[gastosViewMonth]||0);
+  const disponible = saldoInicial + totalIngresos - (totalFijos + totalProvisiones + totalExtraordinarios + totalEspera);
+  const mesCerrado = !!gastosMesesCerrados[gastosViewMonth];
 
   const ingresosPendientes = gastosIngresos.filter(i=>!(i.paidMonths && i.paidMonths[gastosViewMonth]));
-  const fijosPendientes = gastosFijos.filter(i=>!(i.paidMonths && i.paidMonths[gastosViewMonth]));
+  const fijosPendientes = gastosFijos.filter(i=>!i.isProvision && !(i.paidMonths && i.paidMonths[gastosViewMonth]));
   const ciclicosPendientes = gastosCiclicos.filter(c=>!gastosMonthlyInfo('ciclicos',c,gastosViewMonth).confirmed);
 
   let html = renderMonthNav();
+
+  const isEditingSaldo = gastosEditingId === 'saldo';
   html += `<div class="panel">
     <h2>Resumen — ${monthLabel(gastosViewMonth)}</h2>
-    <div class="status-msg">Los valores usan lo que confirmes/ajustes para este mes; lo que no toques usa el plan.</div>
+    <div class="status-msg">Los valores usan lo que confirmes/ajustes para este mes; lo que no toques usa el plan.</div>`;
+  if(isEditingSaldo){
+    html += `<label>Saldo inicial de este mes</label>
+    <input type="text" id="gs_saldo_input" value="${saldoInicial}" inputmode="numeric">
+    <div class="icon-actions" style="margin-top:8px;">
+      ${iconAction('save','save','Guardar', `data-gastos-save-saldo="1"`)}
+      ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+    </div>`;
+  } else {
+    html += `<div class="money-row">
+      <span>Saldo inicial (del mes anterior)</span>
+      <span style="display:flex;align-items:center;gap:6px;">
+        <span class="${saldoInicial>=0?'money-positive':'money-negative'}">${formatCOP(saldoInicial)}</span>
+        <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:12px;" data-gastos-edit-saldo="1" title="Ajustar saldo inicial">✏️</button>
+      </span>
+    </div>`;
+  }
+  html += `
     <div class="money-row"><span>Ingresos</span><span class="money-positive">${formatCOP(totalIngresos)}</span></div>
     <div class="money-row"><span>Gastos fijos</span><span class="money-negative">-${formatCOP(totalFijos)}</span></div>
     <div class="money-row"><span>Provisiones (cíclicos)</span><span class="money-negative">-${formatCOP(totalProvisiones)}</span></div>
     <div class="money-row"><span>Extraordinarios pendientes (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalExtraordinarios)}</span></div>
     <div class="money-row"><span>En espera vencidos (hoy)</span><span class="money-negative">-${formatCOP(totalEspera)}</span></div>
     <div class="money-row total"><span>Dinero disponible</span><span class="${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</span></div>
+  </div>`;
+
+  html += `<div class="panel">
+    ${mesCerrado ? `<div class="status-msg">✅ Este mes está cerrado. Su disponible ya pasó como saldo inicial de ${monthLabel(addMonths(gastosViewMonth,1))}.</div>` : `<div class="status-msg">Cuando termines de revisar este mes, ciérralo para pasar el disponible como saldo inicial de ${monthLabel(addMonths(gastosViewMonth,1))}. No pasa nada solo, tienes que cerrarlo tú.</div>`}
+    <button type="button" class="${mesCerrado?'secondary':'primary'}" data-gastos-cerrar-mes="1" style="width:100%;">${mesCerrado?'🔒 Volver a cerrar (recalcular)':'🔒 Cerrar '+monthLabel(gastosViewMonth)}</button>
   </div>`;
 
   if(fijosPendientes.length || ciclicosPendientes.length || extraordinariosMes.length || esperaVencidos.length){
@@ -993,7 +1031,7 @@ function viewGastosResumen(){
 
   html += `<div class="panel"><h2>Fijos de ${monthLabel(gastosViewMonth)}</h2>`;
   if(gastosFijos.length===0) html += `<div class="empty">Sin fijos registrados en el plan.</div>`;
-  gastosFijos.forEach(i=>{ html += renderGastosInlineRow('fijos', i); });
+  gastosFijos.forEach(i=>{ html += i.isProvision ? renderGastosProvisionRow(i) : renderGastosInlineRow('fijos', i); });
   html += `</div>`;
 
   html += `<div class="panel"><h2>Provisiones cíclicas de ${monthLabel(gastosViewMonth)}</h2>`;
@@ -1041,6 +1079,104 @@ function renderGastosInlineRow(cat, item){
     ${varianceHtml}
   </div>`;
 }
+function gastosProvisionSpent(item, month){
+  const txs = (item.transactions && item.transactions[month]) || [];
+  return txs.reduce((s,t)=>s+Number(t.amount||0),0);
+}
+function renderGastosProvisionManage(item){
+  const month = gastosViewMonth;
+  const key = 'fijos:'+item.id;
+  const isEditing = gastosEditingId===key;
+  const isConfirmingDelete = gastosPendingDeleteId===key;
+  const isAdding = gastosEditingId === ('provquick:'+item.id);
+
+  if(isEditing){
+    return `<div class="task-card">
+      <label>Nombre</label>
+      <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
+      <label>Presupuesto mensual</label>
+      <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
+      <div class="icon-actions" style="margin-top:8px;">
+        ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
+        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+      </div>
+    </div>`;
+  }
+
+  const plan = Number(item.amount||0);
+  const spent = gastosProvisionSpent(item, month);
+  const remaining = plan - spent;
+  const pct = plan>0 ? Math.min(100, Math.round((spent/plan)*100)) : 0;
+  const txs = (item.transactions && item.transactions[month]) || [];
+
+  let headerActions = isConfirmingDelete
+    ? iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`)
+    : iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`) + iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
+
+  const txListHtml = txs.length ? txs.map(t=>`
+    <div class="task-card" style="padding:8px 10px;">
+      <div class="task-top">
+        <div class="task-name" style="font-size:12.5px;font-weight:500;">${t.date}</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div class="task-name" style="font-size:12.5px;">${formatCOP(t.amount)}</div>
+          <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:12px;" data-gastos-provision-delete-tx="fijos:${item.id}:${t.id}" title="Eliminar gasto">🗑️</button>
+        </div>
+      </div>
+    </div>`).join('') : `<div class="empty">Sin gastos registrados en ${monthLabel(month)}.</div>`;
+
+  const addFormHtml = isAdding ? `
+    <div style="margin-top:8px;">
+      <label>Monto del gasto</label>
+      <input type="text" id="gs_prov_amount_${item.id}" placeholder="Monto" inputmode="numeric">
+      <div class="icon-actions" style="margin-top:8px;">
+        ${iconAction('save','save','Agregar', `data-gastos-provision-add="${item.id}"`)}
+        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+      </div>
+    </div>` : `<button type="button" class="secondary" data-gastos-provision-open="${item.id}" style="width:100%;margin-top:8px;">➤ Registrar gasto</button>`;
+
+  return `<div class="task-card">
+    <div class="task-top">
+      <div style="flex:1;">
+        <div class="task-name">🐖 ${escapeHtml(item.name)} <span class="badge">Provisión</span></div>
+        <div class="task-meta">Presupuestado: ${formatCOP(plan)} · Gastado: ${formatCOP(spent)}</div>
+      </div>
+      <div class="task-name ${remaining>=0?'money-positive':'money-negative'}">${formatCOP(remaining)}</div>
+    </div>
+    <div class="progress-track"><div class="progress-fill" style="width:${pct}%;${pct>100?'background:var(--danger);':''}"></div></div>
+    <div class="icon-actions" style="margin-top:8px;">${headerActions}</div>
+    ${addFormHtml}
+    <div style="margin-top:8px;">${txListHtml}</div>
+  </div>`;
+}
+function renderGastosProvisionRow(item){
+  const month = gastosViewMonth;
+  const isAdding = gastosEditingId === ('provquick:'+item.id);
+  const plan = Number(item.amount||0);
+  const spent = gastosProvisionSpent(item, month);
+  const remaining = plan - spent;
+  const pct = plan>0 ? Math.min(100, Math.round((spent/plan)*100)) : 0;
+
+  const addFormHtml = isAdding ? `
+    <div style="margin-top:8px;">
+      <input type="text" id="gs_prov_amount_${item.id}" placeholder="Monto del gasto" inputmode="numeric">
+      <div class="icon-actions" style="margin-top:8px;">
+        ${iconAction('save','save','Agregar', `data-gastos-provision-add="${item.id}"`)}
+        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+      </div>
+    </div>` : `<div class="icon-actions" style="margin-top:8px;">${iconAction('edit','edit','Registrar gasto', `data-gastos-provision-open="${item.id}"`)}</div>`;
+
+  return `<div class="task-card">
+    <div class="task-top">
+      <div style="flex:1;">
+        <div class="task-name">🐖 ${escapeHtml(item.name)}</div>
+        <div class="task-meta">Presupuestado: ${formatCOP(plan)} · Gastado: ${formatCOP(spent)}</div>
+      </div>
+      <div class="task-name ${remaining>=0?'money-positive':'money-negative'}">${formatCOP(remaining)}</div>
+    </div>
+    <div class="progress-track"><div class="progress-fill" style="width:${pct}%;${pct>100?'background:var(--danger);':''}"></div></div>
+    ${addFormHtml}
+  </div>`;
+}
 function renderGastosPendingRow(name, amount){
   return `<div class="task-card status-organizar">
     <div class="task-top">
@@ -1054,6 +1190,10 @@ function gastosMonthlyInfo(cat, item, month){
     const plan = Number(item.totalAmount||0)/Math.max(1,Number(item.periodMonths||1));
     const contrib = (item.contributions && item.contributions[month]!==undefined) ? item.contributions[month] : null;
     return { plan, real: contrib!==null?contrib:plan, confirmed: contrib!==null };
+  }
+  if(cat==='fijos' && item.isProvision){
+    const plan = Number(item.amount||0);
+    return { plan, real: gastosProvisionSpent(item, month), confirmed: true };
   }
   const plan = Number(item.amount||0);
   const ov = (item.overrides && item.overrides[month]!==undefined) ? item.overrides[month] : null;
@@ -1169,21 +1309,78 @@ async function onGastosTogglePaid(key){
   render();
 }
 
+async function onGastosProvisionAdd(id){
+  const item = gastosFijos.find(x=>x.id===id);
+  if(!item) return;
+  const amountEl = document.getElementById('gs_prov_amount_'+id);
+  const amount = parseMoney(amountEl.value);
+  if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
+  if(!item.transactions) item.transactions = {};
+  if(!item.transactions[gastosViewMonth]) item.transactions[gastosViewMonth] = [];
+  item.transactions[gastosViewMonth].push({ id:uid(), amount, date: todayStr() });
+  gastosEditingId = null;
+  await saveGastos('fijos');
+  render();
+}
+async function onGastosProvisionDeleteTx(key){
+  const [cat, id, txId] = key.split(':');
+  const item = gastosListFor(cat).find(x=>x.id===id);
+  if(!item || !item.transactions || !item.transactions[gastosViewMonth]) return;
+  item.transactions[gastosViewMonth] = item.transactions[gastosViewMonth].filter(t=>t.id!==txId);
+  await saveGastos(cat);
+  render();
+}
+
+async function onGastosSaveSaldo(){
+  const val = parseMoney(document.getElementById('gs_saldo_input').value);
+  gastosSaldoInicial[gastosViewMonth] = val;
+  gastosEditingId = null;
+  await saveGastosSaldo();
+  render();
+}
+
+async function onGastosCerrarMes(){
+  const month = gastosViewMonth;
+  const totalIngresos = gastosIngresos.reduce((s,i)=>s+gastosMonthlyInfo('ingresos',i,month).real,0);
+  const totalFijos = gastosFijos.reduce((s,i)=>s+gastosMonthlyInfo('fijos',i,month).real,0);
+  const totalProvisiones = gastosCiclicos.reduce((s,c)=>s+gastosMonthlyInfo('ciclicos',c,month).real,0);
+  const extraordinariosMes = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date && e.date.slice(0,7)===month);
+  const totalExtraordinarios = extraordinariosMes.reduce((s,e)=>s+Number(e.amount||0),0);
+  const today = todayStr();
+  const esperaVencidos = gastosEspera.filter(e=>e.status==='Pendiente' && e.date && e.date < today);
+  const totalEspera = esperaVencidos.reduce((s,e)=>s+Number(e.amount||0),0);
+  const saldoInicial = Number(gastosSaldoInicial[month]||0);
+  const disponible = saldoInicial + totalIngresos - (totalFijos + totalProvisiones + totalExtraordinarios + totalEspera);
+
+  const nextMonth = addMonths(month, 1);
+  gastosSaldoInicial[nextMonth] = disponible;
+  gastosMesesCerrados[month] = true;
+  await saveGastosSaldo();
+  render();
+  alert('Mes cerrado. '+formatCOP(disponible)+' quedó como saldo inicial de '+monthLabel(nextMonth)+'.');
+}
+
 function viewGastosSimpleList(cat, list, title){
-  let html = `<div class="panel"><h2>${title}</h2>
+  const hasProvisions = cat==='fijos' && list.some(i=>i.isProvision);
+  let html = '';
+  if(hasProvisions) html += renderMonthNav();
+  html += `<div class="panel"><h2>${title}</h2>
     <div class="row">
       <div><input type="text" id="gs_new_name_${cat}" placeholder="Nombre"></div>
       <div><input type="text" id="gs_new_amount_${cat}" placeholder="Monto" inputmode="numeric"></div>
     </div>
+    ${cat==='fijos' ? `<label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:var(--muted);"><input type="checkbox" id="gs_new_isprovision_fijos" style="width:auto;min-height:auto;"> Es una provisión (voy registrando gastos sueltos, ej. transporte, restaurante, servicios)</label>` : ''}
     <button type="button" class="primary" data-gastos-add="${cat}" style="width:100%;margin-top:8px;">➤ Agregar</button>
   </div>`;
   html += `<div class="panel">`;
   if(list.length===0) html += `<div class="empty">Sin registros.</div>`;
   list.forEach(item=>{
-    html += renderGastosSimpleItem(cat, item);
+    if(cat==='fijos' && item.isProvision) html += renderGastosProvisionManage(item);
+    else html += renderGastosSimpleItem(cat, item);
   });
-  const total = list.reduce((s,i)=>s+Number(i.amount||0),0);
+  const total = list.reduce((s,i)=> s + (i.isProvision ? gastosProvisionSpent(i, gastosViewMonth) : Number(i.amount||0)), 0);
   html += `<div class="money-row total"><span>Total</span><span>${formatCOP(total)}</span></div>`;
+  if(hasProvisions) html += `<div class="task-meta" style="margin-top:4px;">En las provisiones, este total suma lo que llevas gastado este mes, no el presupuesto completo.</div>`;
   html += `</div>`;
   return html;
 }
@@ -1691,6 +1888,24 @@ function bindEvents(){
   document.querySelectorAll('[data-gastos-toggle-paid]').forEach(b=>{
     b.onclick = ()=>onGastosTogglePaid(b.getAttribute('data-gastos-toggle-paid'));
   });
+  document.querySelectorAll('[data-gastos-provision-open]').forEach(b=>{
+    b.onclick = ()=>{ gastosEditingId = 'provquick:'+b.getAttribute('data-gastos-provision-open'); render(); };
+  });
+  document.querySelectorAll('[data-gastos-provision-add]').forEach(b=>{
+    b.onclick = ()=>onGastosProvisionAdd(b.getAttribute('data-gastos-provision-add'));
+  });
+  document.querySelectorAll('[data-gastos-provision-delete-tx]').forEach(b=>{
+    b.onclick = ()=>onGastosProvisionDeleteTx(b.getAttribute('data-gastos-provision-delete-tx'));
+  });
+  document.querySelectorAll('[data-gastos-edit-saldo]').forEach(b=>{
+    b.onclick = ()=>{ gastosEditingId = 'saldo'; render(); };
+  });
+  document.querySelectorAll('[data-gastos-save-saldo]').forEach(b=>{
+    b.onclick = ()=>onGastosSaveSaldo();
+  });
+  document.querySelectorAll('[data-gastos-cerrar-mes]').forEach(b=>{
+    b.onclick = ()=>onGastosCerrarMes();
+  });
 }
 
 async function onCrearTarea(area){
@@ -1920,7 +2135,10 @@ async function onGastosAdd(cat){
     gastosListFor(cat).push({ id:uid(), name, amount, date, status:'Pendiente' });
     await saveGastos(cat);
   } else {
-    gastosListFor(cat).push({ id:uid(), name, amount, overrides:{}, paidMonths:{} });
+    const isProvision = cat==='fijos' && !!document.getElementById('gs_new_isprovision_fijos') && document.getElementById('gs_new_isprovision_fijos').checked;
+    const newItem = { id:uid(), name, amount, overrides:{}, paidMonths:{} };
+    if(isProvision){ newItem.isProvision = true; newItem.transactions = {}; }
+    gastosListFor(cat).push(newItem);
     await saveGastos(cat);
   }
 
