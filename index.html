@@ -145,6 +145,17 @@
   .money-row{display:flex;justify-content:space-between;align-items:center;}
   .money-row.total{font-weight:700;font-size:15px;border-top:1px solid var(--border);margin-top:6px;padding-top:8px;}
   .money-negative{color:var(--danger);}
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:flex-end;justify-content:center;z-index:1000;padding:0;}
+  .modal-card{background:#fff;border-radius:14px 14px 0 0;max-height:88vh;overflow-y:auto;width:100%;max-width:640px;padding:16px;}
+  @media (min-width:700px){
+    .modal-overlay{align-items:center;padding:16px;}
+    .modal-card{border-radius:14px;max-height:80vh;}
+  }
+  .amort-table{width:100%;border-collapse:collapse;font-size:11px;}
+  .amort-table th{text-align:right;padding:5px 6px;border-bottom:2px solid var(--border);color:var(--muted);font-weight:600;white-space:nowrap;}
+  .amort-table th:first-child{text-align:left;}
+  .amort-table td{text-align:right;padding:5px 6px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .amort-table td:first-child{text-align:left;font-weight:600;}
   .money-positive{color:var(--accent-dark);}
 </style>
 </head>
@@ -154,6 +165,7 @@
   <nav id="tabs"></nav>
   <nav id="tabs-secondary" class="nav-secondary"></nav>
   <div id="content"></div>
+  <div id="modal-root"></div>
 </div>
 
 <script>
@@ -262,6 +274,7 @@ let gastosCiclicos = [];
 let gastosExtraordinarios = [];
 let gastosEspera = [];
 let gastosPrestamos = [];
+let gastosAmortModalId = null;
 let gastosSubTab = 'resumen';
 let gastosViewMonth = null;
 let gastosEditingId = null;
@@ -466,7 +479,7 @@ function viewHome(){
 function render(){
   renderTabs();
   const c = document.getElementById('content');
-  if(homeSection===null){ c.innerHTML = viewHome(); bindEvents(); return; }
+  if(homeSection===null){ c.innerHTML = viewHome(); bindEvents(); updateModal(); return; }
   if(homeSection==='tareas'){
     if(currentTab==='crear') c.innerHTML = viewCrear();
     else if(currentTab==='organizar') c.innerHTML = viewOrganizar();
@@ -487,6 +500,69 @@ function render(){
     else if(currentTab==='g-prestamos') c.innerHTML = viewGastosPrestamos();
   }
   bindEvents();
+  updateModal();
+}
+
+function updateModal(){
+  const root = document.getElementById('modal-root');
+  if(root) root.innerHTML = renderAmortModal();
+  bindModalEvents();
+}
+
+function renderAmortModal(){
+  if(!gastosAmortModalId) return '';
+  const item = gastosEspera.find(x=>x.id===gastosAmortModalId);
+  if(!item) return '';
+  const amort = calcularAmortizacion(item);
+  let bodyHtml;
+  if(amort.sinFecha){
+    bodyHtml = `<div class="empty">Agrega la fecha en que te prestaron para ver la tabla mes a mes.</div>`;
+  } else if(amort.rows.length===0){
+    bodyHtml = `<div class="empty">Sin datos suficientes.</div>`;
+  } else {
+    bodyHtml = `<div style="overflow-x:auto;">
+      <table class="amort-table">
+        <thead><tr>
+          <th>Mes</th><th>Interés</th><th>Abono</th><th>A interés</th><th>A capital</th><th>Saldo capital</th><th>Saldo interés</th>
+        </tr></thead>
+        <tbody>
+          ${amort.rows.map(row=>`<tr>
+            <td>${monthLabel(row.mes)}</td>
+            <td>${formatCOP(row.interesMes)}</td>
+            <td>${formatCOP(row.abono)}</td>
+            <td>${formatCOP(row.aInteres)}</td>
+            <td>${formatCOP(row.aCapital)}</td>
+            <td>${formatCOP(row.saldoCapital)}</td>
+            <td>${formatCOP(row.saldoInteres)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  }
+  return `<div class="modal-overlay" data-modal-close-overlay="1">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="task-top" style="margin-bottom:10px;">
+        <h2 style="margin:0;">${escapeHtml(item.name)}</h2>
+        <button type="button" class="icon-btn" data-modal-close="1" title="Cerrar" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="money-row"><span>Capital pendiente</span><span>${formatCOP(amort.saldoCapital)}</span></div>
+      <div class="money-row"><span>Interés pendiente</span><span>${formatCOP(amort.saldoInteres)}</span></div>
+      <div class="money-row total"><span>Total a pagar hoy</span><span>${formatCOP(amort.saldoTotal)}</span></div>
+      <div style="margin-top:12px;">${bodyHtml}</div>
+    </div>
+  </div>`;
+}
+
+function bindModalEvents(){
+  document.querySelectorAll('[data-modal-close]').forEach(b=>{
+    b.onclick = ()=>{ gastosAmortModalId = null; updateModal(); };
+  });
+  document.querySelectorAll('[data-modal-close-overlay]').forEach(b=>{
+    b.onclick = ()=>{ gastosAmortModalId = null; updateModal(); };
+  });
+  document.querySelectorAll('[data-ver-tabla]').forEach(b=>{
+    b.onclick = ()=>{ gastosAmortModalId = b.getAttribute('data-ver-tabla'); updateModal(); };
+  });
 }
 
 // ---------- Botones de eliminar con confirmación en página ----------
@@ -952,7 +1028,7 @@ function viewGastosResumen(){
   const totalExtraordinarios = extraordinariosMes.reduce((s,e)=>s+Number(e.amount||0),0);
   const today = todayStr();
   const esperaVencidos = gastosEspera.filter(e=>e.status==='Pendiente' && e.date && e.date < today);
-  const totalEspera = esperaVencidos.reduce((s,e)=>s+Number(e.amount||0),0);
+  const totalEspera = esperaVencidos.reduce((s,e)=>s+deudaSaldoActual('espera', e),0);
   const prestamosDelMes = gastosPrestamos.filter(p=>p.date && p.date.slice(0,7)===gastosViewMonth);
   const totalPrestamosSalida = prestamosDelMes.reduce((s,p)=>s+Number(p.amount||0),0);
   const cobrosDelMes = gastosPrestamos.reduce((s,p)=>s + (p.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===gastosViewMonth).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
@@ -1007,17 +1083,17 @@ function viewGastosResumen(){
     html += `<div class="panel"><h2>🔔 Pendiente por pagar</h2>`;
     fijosPendientes.forEach(i=>{
       const info = gastosMonthlyInfo('fijos', i, gastosViewMonth);
-      html += renderGastosPendingRow(i.name, info.plan);
+      html += renderGastosPendingRow(i.name, info.plan, {type:'fijo', id:i.id, month:gastosViewMonth});
     });
     ciclicosPendientes.forEach(c=>{
       const info = gastosMonthlyInfo('ciclicos', c, gastosViewMonth);
-      html += renderGastosPendingRow(c.name+' (provisión)', info.plan);
+      html += renderGastosPendingRow(c.name+' (provisión)', info.plan, {type:'ciclico', id:c.id, month:gastosViewMonth});
     });
     extraordinariosMes.forEach(e=>{
-      html += renderGastosPendingRow(e.name, e.amount);
+      html += renderGastosPendingRow(e.name, e.amount, {type:'imprevisto', id:e.id});
     });
     esperaVencidos.forEach(e=>{
-      html += renderGastosPendingRow(e.name+' (vencido desde '+e.date+')', e.amount);
+      html += renderGastosPendingRow(e.name+' (vencido desde '+e.date+')', deudaSaldoActual('espera', e), {type:'espera', id:e.id});
     });
     html += `</div>`;
   }
@@ -1025,10 +1101,10 @@ function viewGastosResumen(){
     html += `<div class="panel"><h2>🔔 Pendiente por cobrar</h2>`;
     ingresosPendientes.forEach(i=>{
       const info = gastosMonthlyInfo('ingresos', i, gastosViewMonth);
-      html += renderGastosPendingRow(i.name, info.plan);
+      html += renderGastosPendingRow(i.name, info.plan, {type:'ingreso', id:i.id, month:gastosViewMonth});
     });
     prestamosPendientes.forEach(p=>{
-      html += renderGastosPendingRow(p.name+' (préstamo)', esperaSaldo(p));
+      html += renderGastosPendingRow(p.name+' (préstamo)', esperaSaldo(p), {type:'prestamo', id:p.id});
     });
     html += `</div>`;
   }
@@ -1051,28 +1127,6 @@ function viewGastosResumen(){
 }
 
 // ---------- Reconciliación plan vs. real por mes ----------
-function renderGastosInlineRow(cat, item){
-  const info = gastosMonthlyInfo(cat, item, gastosViewMonth);
-  const paid = !!(item.paidMonths && item.paidMonths[gastosViewMonth]);
-  const diff = info.real - info.plan;
-  let varianceHtml = '';
-  if(diff !== 0){
-    const isIncome = cat==='ingresos';
-    const good = isIncome ? diff>0 : diff<0;
-    varianceHtml = `<div class="task-meta" style="margin-top:4px;"><span class="${good?'money-positive':'money-negative'}">${diff>0?'+':''}${formatCOP(diff)} vs. plan</span></div>`;
-  }
-  return `<div class="task-card">
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:110px;">
-        <div class="task-name">${escapeHtml(item.name)}</div>
-        <div class="task-meta">Presupuestado: ${formatCOP(info.plan)}</div>
-      </div>
-      <input type="text" inputmode="numeric" value="${info.real}" data-gastos-inline-amount="${cat}:${item.id}" style="width:120px;min-width:100px;">
-      <button type="button" class="icon-btn" data-gastos-toggle-paid="${cat}:${item.id}" title="${paid?'Pagado — toca para desmarcar':'Marcar pagado'}" aria-label="Marcar pagado">${paid?'✅':'⬜'}</button>
-    </div>
-    ${varianceHtml}
-  </div>`;
-}
 function gastosProvisionSpent(item, month){
   const txs = (item.transactions && item.transactions[month]) || [];
   return txs.reduce((s,t)=>s+Number(t.amount||0),0);
@@ -1174,13 +1228,26 @@ function renderGastosProvisionRow(item){
     ${addFormHtml}
   </div>`;
 }
-function renderGastosPendingRow(name, amount){
+function renderGastosPendingRow(name, amount, action){
+  const checkHtml = action ? `<button type="button" class="icon-btn" data-gastos-quick-check="${action.type}:${action.id}:${action.month||''}" title="Marcar hecho" aria-label="Marcar hecho">✅</button>` : '';
   return `<div class="task-card status-organizar">
     <div class="task-top">
       <div class="task-name">${escapeHtml(name)}</div>
-      <div class="task-name">${formatCOP(amount)}</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="task-name">${formatCOP(amount)}</div>
+        ${checkHtml}
+      </div>
     </div>
   </div>`;
+}
+function excedenteAcumulado(item){
+  const overrides = item.overrides || {};
+  const plan = Number(item.amount||0);
+  let total = 0;
+  Object.keys(overrides).forEach(m=>{
+    total += plan - Number(overrides[m]||0);
+  });
+  return total;
 }
 function gastosMonthlyInfo(cat, item, month){
   if(cat==='ciclicos'){
@@ -1244,7 +1311,7 @@ function renderGastosReconcileItem(cat, item){
   if(info.confirmed && diff !== 0){
     const isIncome = cat==='ingresos';
     const good = isIncome ? diff>0 : diff<0;
-    varianceHtml = `<div class="task-meta" style="margin-top:2px;"><span class="${good?'money-positive':'money-negative'}">${diff>0?'+':''}${formatCOP(diff)} vs. plan</span></div>`;
+    varianceHtml = `<div class="task-meta" style="margin-top:2px;"><span class="${good?'money-positive':'money-negative'}">${diff>=0?'+':'-'}${formatCOP(Math.abs(diff))} vs. plan</span></div>`;
   }
   return `<div class="task-card ${info.confirmed?'status-terminada':'status-sin-iniciar'}">
     <div class="task-top">
@@ -1306,6 +1373,65 @@ async function onGastosTogglePaid(key){
   render();
 }
 
+async function onGastosQuickCheck(key){
+  const [type, id, month] = key.split(':');
+  const mes = month || currentMonthStr();
+
+  if(type==='ingreso'){
+    const item = gastosIngresos.find(x=>x.id===id);
+    if(!item) return;
+    if(!item.paidMonths) item.paidMonths = {};
+    item.paidMonths[mes] = true;
+    await saveGastos('ingresos');
+
+  } else if(type==='fijo'){
+    const item = gastosFijos.find(x=>x.id===id);
+    if(!item) return;
+    if(!item.paidMonths) item.paidMonths = {};
+    item.paidMonths[mes] = true;
+    await saveGastos('fijos');
+
+  } else if(type==='ciclico'){
+    const item = gastosCiclicos.find(x=>x.id===id);
+    if(!item) return;
+    if(!item.contributions) item.contributions = {};
+    if(item.contributions[mes] === undefined){
+      const provision = Number(item.totalAmount||0)/Math.max(1,Number(item.periodMonths||1));
+      item.contributions[mes] = provision;
+    }
+    await saveGastos('ciclicos');
+
+  } else if(type==='imprevisto'){
+    const item = gastosExtraordinarios.find(x=>x.id===id);
+    if(!item) return;
+    item.status = 'Pagado';
+    await saveGastos('extraordinarios');
+
+  } else if(type==='espera'){
+    const item = gastosEspera.find(x=>x.id===id);
+    if(!item) return;
+    const saldo = deudaSaldoActual('espera', item);
+    if(saldo>0){
+      if(!item.abonos) item.abonos = [];
+      item.abonos.push({ id:uid(), amount: saldo, date: todayStr() });
+    }
+    item.status = 'Pagado';
+    await saveGastos('espera');
+
+  } else if(type==='prestamo'){
+    const item = gastosPrestamos.find(x=>x.id===id);
+    if(!item) return;
+    const saldo = esperaSaldo(item);
+    if(saldo>0){
+      if(!item.abonos) item.abonos = [];
+      item.abonos.push({ id:uid(), amount: saldo, date: todayStr() });
+    }
+    item.status = 'Pagado';
+    await saveGastos('prestamos');
+  }
+  render();
+}
+
 async function onGastosProvisionAdd(id){
   const item = gastosFijos.find(x=>x.id===id);
   if(!item) return;
@@ -1337,9 +1463,11 @@ async function onGastosAbonoAdd(key){
   const amountEl = document.getElementById('gs_abono_amount_'+id);
   const amount = parseMoney(amountEl.value);
   if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
+  const dateEl = document.getElementById('gs_abono_date_'+id);
+  const abonoDate = (dateEl && dateEl.value) ? dateEl.value : todayStr();
   if(!item.abonos) item.abonos = [];
-  item.abonos.push({ id:uid(), amount, date: todayStr() });
-  item.status = esperaSaldo(item) <= 0 ? 'Pagado' : 'Pendiente';
+  item.abonos.push({ id:uid(), amount, date: abonoDate });
+  item.status = deudaSaldoActual(cat, item) <= 0 ? 'Pagado' : 'Pendiente';
   gastosEditingId = null;
   await saveGastos(cat);
   render();
@@ -1349,7 +1477,7 @@ async function onGastosAbonoDelete(key){
   const item = gastosListFor(cat).find(x=>x.id===id);
   if(!item || !item.abonos) return;
   item.abonos = item.abonos.filter(a=>a.id!==abonoId);
-  item.status = esperaSaldo(item) <= 0 ? 'Pagado' : 'Pendiente';
+  item.status = deudaSaldoActual(cat, item) <= 0 ? 'Pagado' : 'Pendiente';
   await saveGastos(cat);
   render();
 }
@@ -1371,7 +1499,7 @@ async function onGastosCerrarMes(){
   const totalExtraordinarios = extraordinariosMes.reduce((s,e)=>s+Number(e.amount||0),0);
   const today = todayStr();
   const esperaVencidos = gastosEspera.filter(e=>e.status==='Pendiente' && e.date && e.date < today);
-  const totalEspera = esperaVencidos.reduce((s,e)=>s+Number(e.amount||0),0);
+  const totalEspera = esperaVencidos.reduce((s,e)=>s+deudaSaldoActual('espera', e),0);
   const saldoInicial = Number(gastosSaldoInicial[month]||0);
   const disponible = saldoInicial + totalIngresos - (totalFijos + totalProvisiones + totalExtraordinarios + totalEspera);
 
@@ -1385,9 +1513,9 @@ async function onGastosCerrarMes(){
 
 function viewGastosSimpleList(cat, list, title){
   const hasProvisions = cat==='fijos' && list.some(i=>i.isProvision);
-  let html = '';
-  if(hasProvisions) html += renderMonthNav();
+  let html = renderMonthNav();
   html += `<div class="panel"><h2>${title}</h2>
+    <div class="status-msg">El check ✅ marca ${cat==='ingresos'?'recibido':'pagado'} para ${monthLabel(gastosViewMonth)} — usa las flechas de arriba para marcar otro mes.</div>
     <div class="row">
       <div><input type="text" id="gs_new_name_${cat}" placeholder="Nombre"></div>
       <div><input type="text" id="gs_new_amount_${cat}" placeholder="Monto" inputmode="numeric"></div>
@@ -1428,17 +1556,47 @@ function renderGastosSimpleItem(cat, item){
       </div>
     </div>`;
   }
+  const info = gastosMonthlyInfo(cat, item, gastosViewMonth);
+  const paid = !!(item.paidMonths && item.paidMonths[gastosViewMonth]);
+  const diff = info.real - info.plan;
+  let varianceHtml = '';
+  if(diff !== 0){
+    const isIncome = cat==='ingresos';
+    const good = isIncome ? diff>0 : diff<0;
+    const monthlyLabel = isIncome
+      ? (diff>0 ? `+${formatCOP(diff)} de más recibido este mes` : `${formatCOP(diff)} menos recibido este mes`)
+      : (diff<0 ? `Ahorraste ${formatCOP(Math.abs(diff))} este mes` : `Pagaste ${formatCOP(diff)} de más este mes`);
+    varianceHtml = `<div class="task-meta" style="margin-top:4px;"><span class="${good?'money-positive':'money-negative'}">${good?'💚':'🔴'} ${monthlyLabel}</span></div>`;
+  }
+  const excedente = excedenteAcumulado(item);
+  let excedenteHtml = '';
+  if(excedente !== 0){
+    const isIncome = cat==='ingresos';
+    const bueno = isIncome ? excedente < 0 : excedente > 0;
+    const label = isIncome
+      ? (excedente<0 ? `Acumulado: +${formatCOP(Math.abs(excedente))} de más recibido` : `Acumulado: ${formatCOP(excedente)} menos recibido`)
+      : (excedente>0 ? `Excedente acumulado: ${formatCOP(excedente)} disponible` : `Déficit acumulado: ${formatCOP(Math.abs(excedente))}`);
+    excedenteHtml = `<div class="task-meta" style="margin-top:2px;"><span class="${bueno?'money-positive':'money-negative'}">${bueno?'🟢':'🟠'} ${label}</span></div>`;
+  }
   const actions = isConfirmingDelete
     ? iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`)
-    : iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`) + iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
-  return `<div class="task-card">
-    <div class="task-top">
-      <div>
+    : iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`)
+      + `<button type="button" class="icon-btn" data-gastos-toggle-paid="${key}" title="${paid?'Marcado — toca para desmarcar':(cat==='ingresos'?'Marcar recibido':'Marcar pagado')}" aria-label="Marcar pagado">${paid?'✅':'⬜'}</button>`
+      + iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
+  return `<div class="task-card ${paid?'status-terminada':''}">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:110px;">
         <div class="task-name">${escapeHtml(item.name)}</div>
-        ${(cat==='fijos' && item.dueDay) ? `<div class="task-meta">Vence el día ${item.dueDay} de cada mes</div>` : ''}
+        <div class="task-meta">Presupuestado: ${formatCOP(info.plan)}${(cat==='fijos' && item.dueDay) ? ` · vence el ${item.dueDay}` : ''}</div>
       </div>
-      <div class="task-name">${formatCOP(item.amount)}</div>
+      <div style="text-align:right;">
+        <label style="margin:0 0 2px;text-align:right;">Real este mes</label>
+        <input type="text" inputmode="numeric" value="${info.real}" data-gastos-inline-amount="${cat}:${item.id}" style="width:120px;min-width:100px;">
+      </div>
     </div>
+    ${varianceHtml}
+    ${excedenteHtml}
+    <div class="task-meta" style="margin-top:2px;">${paid?(cat==='ingresos'?'Recibido':'Pagado')+' este mes':'Pendiente este mes'}</div>
     <div class="icon-actions" style="margin-top:8px;">${actions}</div>
   </div>`;
 }
@@ -1449,19 +1607,69 @@ function esperaAbonado(item){
 function esperaSaldo(item){
   return Number(item.amount||0) - esperaAbonado(item);
 }
+
+// ---------- Motor de amortización (interés simple sobre capital pendiente) ----------
+function calcularAmortizacion(item){
+  const capitalInicial = Number(item.amount||0);
+  const tasa = Number(item.tasaMensual||0) / 100;
+  const abonos = item.abonos || [];
+
+  if(!item.date){
+    const abonado = esperaAbonado(item);
+    const saldoCapital = Math.max(0, capitalInicial - abonado);
+    return { rows: [], saldoCapital, saldoInteres: 0, saldoTotal: saldoCapital, sinFecha: true };
+  }
+
+  const abonosPorMes = {};
+  abonos.forEach(a=>{
+    if(!a.date) return;
+    const am = a.date.slice(0,7);
+    abonosPorMes[am] = (abonosPorMes[am]||0) + Number(a.amount||0);
+  });
+
+  const startMonth = item.date.slice(0,7);
+  const endMonth = currentMonthStr();
+  let capital = capitalInicial;
+  let interesAcum = 0;
+  const rows = [];
+  let m = startMonth;
+  let iter = 0;
+  while(iter < 600){
+    iter++;
+    const interesMes = capital * tasa;
+    interesAcum += interesMes;
+    const abonoMes = abonosPorMes[m] || 0;
+    const aInteres = Math.min(abonoMes, interesAcum);
+    interesAcum -= aInteres;
+    const restante = abonoMes - aInteres;
+    const aCapital = Math.min(restante, capital);
+    capital -= aCapital;
+    rows.push({ mes:m, interesMes, abono:abonoMes, aInteres, aCapital, saldoCapital:capital, saldoInteres:interesAcum });
+    if(m === endMonth || (m > endMonth)) break;
+    m = addMonths(m, 1);
+  }
+  return { rows, saldoCapital:capital, saldoInteres:interesAcum, saldoTotal: capital+interesAcum, sinFecha:false };
+}
+function deudaSaldoActual(cat, item){
+  if(cat==='espera') return calcularAmortizacion(item).saldoTotal;
+  return esperaSaldo(item);
+}
+
 const LABELS_ESPERA = { montoLabel:'Monto total', abonadoLabel:'Abonado', accionLabel:'Registrar abono', icono:'💵' };
 const LABELS_PRESTAMOS = { montoLabel:'Monto prestado', abonadoLabel:'Cobrado', accionLabel:'Registrar cobro', icono:'💰' };
 
 function viewGastosEspera(){
   let html = `<div class="panel">
     <h2>Lo que debo</h2>
-    <div class="status-msg">Registra el valor total y ve haciendo abonos — el saldo baja solo hasta llegar a $0, donde se marca pagado automáticamente.</div>
+    <div class="status-msg">Registra el valor total y ve haciendo abonos — el saldo baja solo hasta llegar a $0, donde se marca pagado automáticamente. Si la deuda tiene interés, agrégalo para ver la tabla mes a mes.</div>
     <div class="row">
       <div><input type="text" id="gs_new_name_espera" placeholder="Nombre"></div>
       <div><input type="text" id="gs_new_amount_espera" placeholder="Monto total" inputmode="numeric"></div>
     </div>
-    <label>Fecha (opcional, si la sabes)</label>
+    <label>Fecha en que te prestaron (necesaria para calcular interés)</label>
     <input type="date" id="gs_new_date_espera">
+    <label>Tasa de interés mensual (opcional, deja en blanco o 0 si no tiene)</label>
+    <input type="text" id="gs_new_tasa_espera" placeholder="Ej. 2 (para 2% mensual)" inputmode="numeric">
     <button type="button" class="primary" data-gastos-add="espera" style="width:100%;margin-top:8px;">➤ Agregar</button>
   </div>`;
   html += `<div class="panel">`;
@@ -1506,6 +1714,8 @@ function renderGastosDeudaItem(cat, item, labels){
       <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
       <label>Fecha</label>
       <input type="date" id="gs_edit_date_${item.id}" value="${item.date||''}">
+      ${cat==='espera' ? `<label>Tasa de interés mensual (0 si no tiene)</label>
+      <input type="text" id="gs_edit_tasa_${item.id}" value="${item.tasaMensual||0}" inputmode="numeric">` : ''}
       <div class="icon-actions" style="margin-top:8px;">
         ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
         ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
@@ -1514,9 +1724,11 @@ function renderGastosDeudaItem(cat, item, labels){
   }
 
   const total = Number(item.amount||0);
+  const conInteres = cat==='espera';
+  const amort = conInteres ? calcularAmortizacion(item) : null;
   const abonado = esperaAbonado(item);
-  const saldo = esperaSaldo(item);
-  const pct = total>0 ? Math.min(100, Math.round((abonado/total)*100)) : 0;
+  const saldo = conInteres ? amort.saldoTotal : esperaSaldo(item);
+  const pctCapital = total>0 ? Math.min(100, Math.round(((total-(conInteres?amort.saldoCapital:saldo))/total)*100)) : 0;
   const pagado = saldo <= 0;
   const isVencido = !pagado && item.date && item.date < todayStr();
   const abonos = (item.abonos||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
@@ -1527,6 +1739,7 @@ function renderGastosDeudaItem(cat, item, labels){
   } else {
     actions = iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`);
     if(!pagado) actions += `<button type="button" class="icon-btn" title="${labels.accionLabel}" aria-label="${labels.accionLabel}" data-gastos-abono-open="${cat}:${item.id}">${labels.icono}</button>`;
+    if(conInteres && !amort.sinFecha) actions += `<button type="button" class="icon-btn" title="Ver tabla" aria-label="Ver tabla" data-ver-tabla="${item.id}">📈</button>`;
     actions += iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
   }
 
@@ -1534,6 +1747,8 @@ function renderGastosDeudaItem(cat, item, labels){
     <div style="margin-top:8px;">
       <label>Monto</label>
       <input type="text" id="gs_abono_amount_${item.id}" placeholder="Monto" inputmode="numeric">
+      <label>Fecha del abono</label>
+      <input type="date" id="gs_abono_date_${item.id}" value="${todayStr()}">
       <div class="icon-actions" style="margin-top:8px;">
         ${iconAction('save','save','Agregar', `data-gastos-abono-add="${cat}:${item.id}"`)}
         ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
@@ -1551,6 +1766,10 @@ function renderGastosDeudaItem(cat, item, labels){
       </div>
     </div>`).join('') : '';
 
+  const detalleInteresHtml = conInteres
+    ? `<div class="task-meta" style="margin-top:4px;">Capital pendiente: ${formatCOP(amort.saldoCapital)}${item.tasaMensual?` · Interés pendiente: ${formatCOP(amort.saldoInteres)}`:''} · Total: ${formatCOP(saldo)}${item.tasaMensual?` · Tasa: ${item.tasaMensual}% mensual`:''}${amort.sinFecha?' · (agrega fecha para ver tabla)':''}</div>`
+    : `<div class="task-meta" style="margin-top:4px;">${labels.abonadoLabel}: ${formatCOP(abonado)} · Saldo: ${formatCOP(saldo)}</div>`;
+
   return `<div class="task-card ${pagado?'status-terminada':(isVencido?'status-organizar':'status-sin-iniciar')}">
     <div class="task-top">
       <div>
@@ -1562,8 +1781,8 @@ function renderGastosDeudaItem(cat, item, labels){
       </div>
       <div class="task-name">${formatCOP(total)}</div>
     </div>
-    <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
-    <div class="task-meta" style="margin-top:4px;">${labels.abonadoLabel}: ${formatCOP(abonado)} · Saldo: ${formatCOP(saldo)}</div>
+    <div class="progress-track"><div class="progress-fill" style="width:${pctCapital}%;"></div></div>
+    ${detalleInteresHtml}
     <div class="icon-actions" style="margin-top:8px;">${actions}</div>
     ${abonoFormHtml}
     ${abonosListHtml ? `<div style="margin-top:8px;">${abonosListHtml}</div>` : ''}
@@ -1650,33 +1869,33 @@ function viewGastosDia(){
   if(!anyHoy){
     html += `<div class="empty">Nada vence hoy.</div>`;
   } else {
-    fijosHoy.forEach(i=>{ html += renderGastosPendingRow('📌 '+i.name, i.amount); });
+    fijosHoy.forEach(i=>{ html += renderGastosPendingRow('📌 '+i.name, i.amount, {type:'fijo', id:i.id, month:mesActual}); });
     ciclicosHoy.forEach(c=>{
       const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
-      html += renderGastosPendingRow('🐷 '+c.name, provision);
+      html += renderGastosPendingRow('🐷 '+c.name, provision, {type:'ciclico', id:c.id, month:mesActual});
     });
-    imprevistosHoy.forEach(e=>{ html += renderGastosPendingRow('⚡ '+e.name, e.amount); });
-    esperaVencidosHoy.forEach(e=>{ html += renderGastosPendingRow('⏳ '+e.name+' (vencido desde '+e.date+')', esperaSaldo(e)); });
+    imprevistosHoy.forEach(e=>{ html += renderGastosPendingRow('⚡ '+e.name, e.amount, {type:'imprevisto', id:e.id}); });
+    esperaVencidosHoy.forEach(e=>{ html += renderGastosPendingRow('⏳ '+e.name+' (vencido desde '+e.date+')', deudaSaldoActual('espera', e), {type:'espera', id:e.id}); });
   }
   html += `</div>`;
 
   const fijosPend = gastosFijos.filter(i=>!i.isProvision && !fijosHoy.includes(i) && !(i.paidMonths && i.paidMonths[mesActual]));
   const ciclicosPend = gastosCiclicos.filter(c=>!ciclicosHoy.includes(c) && !(c.contributions && c.contributions[mesActual]!==undefined));
   const imprevistosPend = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && !imprevistosHoy.includes(e));
-  const esperaPend = gastosEspera.filter(e=>e.status==='Pendiente' && !esperaVencidosHoy.includes(e) && esperaSaldo(e)>0);
+  const esperaPend = gastosEspera.filter(e=>e.status==='Pendiente' && !esperaVencidosHoy.includes(e) && deudaSaldoActual('espera', e)>0);
 
   const anyPend = fijosPend.length || ciclicosPend.length || imprevistosPend.length || esperaPend.length;
   html += `<div class="panel"><h2>🟡 Otros pendientes</h2>`;
   if(!anyPend){
     html += `<div class="empty">No tienes más pagos pendientes.</div>`;
   } else {
-    fijosPend.forEach(i=>{ html += renderGastosPendingRow('📌 '+i.name+(i.dueDay?` (vence el ${i.dueDay})`:''), i.amount); });
+    fijosPend.forEach(i=>{ html += renderGastosPendingRow('📌 '+i.name+(i.dueDay?` (vence el ${i.dueDay})`:''), i.amount, {type:'fijo', id:i.id, month:mesActual}); });
     ciclicosPend.forEach(c=>{
       const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
-      html += renderGastosPendingRow('🐷 '+c.name+(c.nextDueDate?` (próx. ${c.nextDueDate})`:''), provision);
+      html += renderGastosPendingRow('🐷 '+c.name+(c.nextDueDate?` (próx. ${c.nextDueDate})`:''), provision, {type:'ciclico', id:c.id, month:mesActual});
     });
-    imprevistosPend.forEach(e=>{ html += renderGastosPendingRow('⚡ '+e.name+(e.date?` (${e.date})`:''), e.amount); });
-    esperaPend.forEach(e=>{ html += renderGastosPendingRow('⏳ '+e.name+(e.date?` (vence ${e.date})`:''), esperaSaldo(e)); });
+    imprevistosPend.forEach(e=>{ html += renderGastosPendingRow('⚡ '+e.name+(e.date?` (${e.date})`:''), e.amount, {type:'imprevisto', id:e.id}); });
+    esperaPend.forEach(e=>{ html += renderGastosPendingRow('⏳ '+e.name+(e.date?` (vence ${e.date})`:''), deudaSaldoActual('espera', e), {type:'espera', id:e.id}); });
   }
   html += `</div>`;
 
@@ -2103,6 +2322,9 @@ function bindEvents(){
   document.querySelectorAll('[data-gastos-toggle-paid]').forEach(b=>{
     b.onclick = ()=>onGastosTogglePaid(b.getAttribute('data-gastos-toggle-paid'));
   });
+  document.querySelectorAll('[data-gastos-quick-check]').forEach(b=>{
+    b.onclick = ()=>onGastosQuickCheck(b.getAttribute('data-gastos-quick-check'));
+  });
   document.querySelectorAll('[data-gastos-provision-open]').forEach(b=>{
     b.onclick = ()=>{ gastosEditingId = 'provquick:'+b.getAttribute('data-gastos-provision-open'); render(); };
   });
@@ -2357,7 +2579,13 @@ async function onGastosAdd(cat){
   } else if(cat==='extraordinarios' || cat==='espera' || cat==='prestamos'){
     const date = document.getElementById('gs_new_date_'+cat).value || null;
     if((cat==='extraordinarios' || cat==='prestamos') && !date){ alert('Indica la fecha.'); return; }
-    gastosListFor(cat).push({ id:uid(), name, amount, date, status:'Pendiente', abonos:[] });
+    const newDeuda = { id:uid(), name, amount, date, status:'Pendiente', abonos:[] };
+    if(cat==='espera'){
+      const tasaEl = document.getElementById('gs_new_tasa_espera');
+      const tasa = tasaEl ? parseFloat(tasaEl.value) : 0;
+      newDeuda.tasaMensual = isNaN(tasa) ? 0 : tasa;
+    }
+    gastosListFor(cat).push(newDeuda);
     await saveGastos(cat);
   } else {
     const isProvision = cat==='fijos' && !!document.getElementById('gs_new_isprovision_fijos') && document.getElementById('gs_new_isprovision_fijos').checked;
@@ -2379,6 +2607,8 @@ async function onGastosAdd(cat){
   if(dateEl) dateEl.value='';
   const periodEl = document.getElementById('gs_new_period_'+cat);
   if(periodEl) periodEl.value='';
+  const tasaEl2 = document.getElementById('gs_new_tasa_espera');
+  if(tasaEl2) tasaEl2.value='';
   render();
 }
 
@@ -2408,6 +2638,11 @@ async function onGastosSaveEdit(key){
       const dueDayEl = document.getElementById('gs_edit_dueday_'+id);
       const dueDay = dueDayEl ? parseInt(dueDayEl.value,10) : NaN;
       item.dueDay = (dueDay>=1 && dueDay<=31) ? dueDay : null;
+    }
+    if(cat==='espera'){
+      const tasaEl = document.getElementById('gs_edit_tasa_'+id);
+      const tasa = tasaEl ? parseFloat(tasaEl.value) : 0;
+      item.tasaMensual = isNaN(tasa) ? 0 : tasa;
     }
   }
 
