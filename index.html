@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Gestor de tareas de Nico Llano</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
@@ -275,6 +278,9 @@ let gastosExtraordinarios = [];
 let gastosEspera = [];
 let gastosPrestamos = [];
 let gastosAmortModalId = null;
+let gastosAmortModalCat = 'espera';
+let gastosMetas = [];
+let chartInstances = {};
 let gastosSubTab = 'resumen';
 let gastosViewMonth = null;
 let gastosEditingId = null;
@@ -333,7 +339,7 @@ async function loadData(){
   if(!supabaseClient){
     alert('Falta configurar Supabase: edita SUPABASE_URL y SUPABASE_ANON_KEY en el código.');
     tasks = []; projects = [];
-    gastosIngresos = []; gastosFijos = []; gastosCiclicos = []; gastosExtraordinarios = []; gastosEspera = []; gastosPrestamos = [];
+    gastosIngresos = []; gastosFijos = []; gastosCiclicos = []; gastosExtraordinarios = []; gastosEspera = []; gastosPrestamos = []; gastosMetas = [];
     gastosSaldoInicial = {}; gastosMesesCerrados = {};
     return;
   }
@@ -345,6 +351,7 @@ async function loadData(){
   try{ gastosExtraordinarios = (await kvGet('gastos_extraordinarios')) || []; }catch(e){ console.error('Error cargando gastos_extraordinarios', e); gastosExtraordinarios = []; }
   try{ gastosEspera = (await kvGet('gastos_espera')) || []; }catch(e){ console.error('Error cargando gastos_espera', e); gastosEspera = []; }
   try{ gastosPrestamos = (await kvGet('gastos_prestamos')) || []; }catch(e){ console.error('Error cargando gastos_prestamos', e); gastosPrestamos = []; }
+  try{ gastosMetas = (await kvGet('gastos_metas')) || []; }catch(e){ console.error('Error cargando gastos_metas', e); gastosMetas = []; }
   try{
     const parsed = await kvGet('gastos_saldo');
     gastosSaldoInicial = parsed ? (parsed.inicial||{}) : {};
@@ -363,6 +370,10 @@ async function saveGastosSaldo(){
   try{ await kvSet('gastos_saldo', { inicial: gastosSaldoInicial, cerrados: gastosMesesCerrados }); }
   catch(e){ console.error('Error guardando saldo', e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
+async function saveGastosMetas(){
+  try{ await kvSet('gastos_metas', gastosMetas); }
+  catch(e){ console.error('Error guardando metas', e); alert('No se pudo guardar. Intenta de nuevo.'); }
+}
 async function saveGastos(cat){
   const map = {
     ingresos: gastosIngresos,
@@ -371,6 +382,7 @@ async function saveGastos(cat){
     extraordinarios: gastosExtraordinarios,
     espera: gastosEspera,
     prestamos: gastosPrestamos,
+    metas: gastosMetas,
   };
   try{ await kvSet('gastos_'+cat, map[cat]); }
   catch(e){ console.error('Error guardando gastos_'+cat, e); alert('No se pudo guardar. Intenta de nuevo.'); }
@@ -437,6 +449,7 @@ function renderTabs(){
       ['g-imprevistos','⚡ Imprevistos'],
       ['g-espera','⏳ Lo que debo'],
       ['g-prestamos','🤝 Lo que me deben'],
+      ['g-metas','🎯 Metas'],
     ];
   }
   const pendCount = tasks.filter(t=>t.status==='Por organizar').length;
@@ -498,9 +511,11 @@ function render(){
     else if(currentTab==='g-imprevistos') c.innerHTML = viewGastosDatedList('extraordinarios', gastosExtraordinarios, 'Imprevistos', true);
     else if(currentTab==='g-espera') c.innerHTML = viewGastosEspera();
     else if(currentTab==='g-prestamos') c.innerHTML = viewGastosPrestamos();
+    else if(currentTab==='g-metas') c.innerHTML = viewGastosMetas();
   }
   bindEvents();
   updateModal();
+  if(homeSection==='gastos' && currentTab==='g-resumen') renderGastosCharts();
 }
 
 function updateModal(){
@@ -511,7 +526,7 @@ function updateModal(){
 
 function renderAmortModal(){
   if(!gastosAmortModalId) return '';
-  const item = gastosEspera.find(x=>x.id===gastosAmortModalId);
+  const item = gastosListFor(gastosAmortModalCat).find(x=>x.id===gastosAmortModalId);
   if(!item) return '';
   const amort = calcularAmortizacion(item);
   let bodyHtml;
@@ -523,7 +538,7 @@ function renderAmortModal(){
     bodyHtml = `<div style="overflow-x:auto;">
       <table class="amort-table">
         <thead><tr>
-          <th>Mes</th><th>Interés</th><th>Abono</th><th>A interés</th><th>A capital</th><th>Saldo capital</th><th>Saldo interés</th>
+          <th>Mes</th><th>Interés</th><th>Abono</th><th>A interés</th><th>A capital</th><th>Saldo capital</th><th>Saldo interés</th><th>Saldo total</th>
         </tr></thead>
         <tbody>
           ${amort.rows.map(row=>`<tr>
@@ -534,7 +549,18 @@ function renderAmortModal(){
             <td>${formatCOP(row.aCapital)}</td>
             <td>${formatCOP(row.saldoCapital)}</td>
             <td>${formatCOP(row.saldoInteres)}</td>
+            <td><strong>${formatCOP(row.saldoTotalMes)}</strong></td>
           </tr>`).join('')}
+          ${amort.cierre ? `<tr style="background:var(--accent-soft);">
+            <td><strong>${monthLabel(amort.cierre.mes)} (si pagas todo)</strong></td>
+            <td>—</td>
+            <td>${formatCOP(amort.cierre.montoNecesario)}</td>
+            <td>${formatCOP(amort.cierre.interesQueSalda)}</td>
+            <td>${formatCOP(amort.cierre.capitalQueSalda)}</td>
+            <td>$0</td>
+            <td>$0</td>
+            <td><strong>$0 — deuda saldada</strong></td>
+          </tr>` : ''}
         </tbody>
       </table>
     </div>`;
@@ -548,6 +574,8 @@ function renderAmortModal(){
       <div class="money-row"><span>Capital pendiente</span><span>${formatCOP(amort.saldoCapital)}</span></div>
       <div class="money-row"><span>Interés pendiente</span><span>${formatCOP(amort.saldoInteres)}</span></div>
       <div class="money-row total"><span>Total a pagar hoy</span><span>${formatCOP(amort.saldoTotal)}</span></div>
+      ${!amort.sinFecha && amort.rows.length ? `<button type="button" class="secondary" data-descargar-amort="${item.id}" style="width:100%;margin-top:10px;">📄 Descargar PDF</button>` : ''}
+      ${amort.cierre ? `<div class="status-msg" style="margin-top:8px;">La fila resaltada muestra qué pasaría si pagaras ${formatCOP(amort.cierre.montoNecesario)} para saldar la deuda por completo (capital + interés).</div>` : ''}
       <div style="margin-top:12px;">${bodyHtml}</div>
     </div>
   </div>`;
@@ -561,8 +589,80 @@ function bindModalEvents(){
     b.onclick = ()=>{ gastosAmortModalId = null; updateModal(); };
   });
   document.querySelectorAll('[data-ver-tabla]').forEach(b=>{
-    b.onclick = ()=>{ gastosAmortModalId = b.getAttribute('data-ver-tabla'); updateModal(); };
+    b.onclick = ()=>{
+      gastosAmortModalId = b.getAttribute('data-ver-tabla');
+      gastosAmortModalCat = b.getAttribute('data-ver-tabla-cat') || 'espera';
+      updateModal();
+    };
   });
+  document.querySelectorAll('[data-descargar-amort]').forEach(b=>{
+    b.onclick = ()=>onDescargarAmortizacionPDF(b.getAttribute('data-descargar-amort'), b.getAttribute('data-descargar-amort-cat') || 'espera');
+  });
+}
+
+function onDescargarAmortizacionPDF(id, cat){
+  const item = gastosListFor(cat||'espera').find(x=>x.id===id);
+  if(!item) return;
+  if(typeof window.jspdf === 'undefined'){
+    alert('No se pudo cargar la librería de PDF. Verifica tu conexión a internet e intenta de nuevo.');
+    return;
+  }
+  const amort = calcularAmortizacion(item);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  doc.setFontSize(16);
+  doc.text('Tabla de amortización', 14, 18);
+  doc.setFontSize(10);
+  doc.setTextColor(120);
+  doc.text(`${item.name}  ·  Capital inicial: ${formatCOP(item.amount)}  ·  Tasa: ${item.tasaMensual||0}% mensual  ·  Inicio: ${item.date}`, 14, 25);
+  doc.setTextColor(0);
+
+  const head = [['Mes','Interés del mes','Abono','A interés','A capital','Saldo capital','Saldo interés','Saldo total']];
+  const body = amort.rows.map(row=>[
+    monthLabel(row.mes),
+    formatCOP(row.interesMes),
+    formatCOP(row.abono),
+    formatCOP(row.aInteres),
+    formatCOP(row.aCapital),
+    formatCOP(row.saldoCapital),
+    formatCOP(row.saldoInteres),
+    formatCOP(row.saldoTotalMes),
+  ]);
+  if(amort.cierre){
+    body.push([
+      monthLabel(amort.cierre.mes)+' (si pagas todo)',
+      '—',
+      formatCOP(amort.cierre.montoNecesario),
+      formatCOP(amort.cierre.interesQueSalda),
+      formatCOP(amort.cierre.capitalQueSalda),
+      '$0',
+      '$0',
+      '$0 — saldada',
+    ]);
+  }
+
+  doc.autoTable({
+    head, body, startY: 32,
+    styles: { fontSize: 7.5, cellPadding: 2.5 },
+    headStyles: { fillColor: [37, 211, 102], textColor: 255 },
+    alternateRowStyles: { fillColor: [247, 247, 245] },
+    didParseCell: function(data){
+      if(amort.cierre && data.row.index === body.length-1){
+        data.cell.styles.fillColor = [231, 239, 233];
+        data.cell.styles.fontStyle = 'bold';
+      }
+    },
+  });
+
+  const finalY = doc.lastAutoTable.finalY + 10;
+  doc.setFontSize(11);
+  doc.text(`Capital pendiente: ${formatCOP(amort.saldoCapital)}`, 14, finalY);
+  doc.text(`Interés pendiente: ${formatCOP(amort.saldoInteres)}`, 14, finalY+7);
+  doc.setFont(undefined, 'bold');
+  doc.text(`Total a pagar hoy: ${formatCOP(amort.saldoTotal)}`, 14, finalY+16);
+
+  doc.save('amortizacion_'+item.name.replace(/[^a-z0-9]/gi,'_')+'.pdf');
 }
 
 // ---------- Botones de eliminar con confirmación en página ----------
@@ -1020,21 +1120,43 @@ function renderMonthNav(){
   </div>`;
 }
 
-function viewGastosResumen(){
-  const totalIngresos = gastosIngresos.reduce((s,i)=>s+gastosMonthlyInfo('ingresos',i,gastosViewMonth).real,0);
-  const totalFijos = gastosFijos.reduce((s,i)=>s+gastosMonthlyInfo('fijos',i,gastosViewMonth).real,0);
-  const totalProvisiones = gastosCiclicos.reduce((s,c)=>s+gastosMonthlyInfo('ciclicos',c,gastosViewMonth).real,0);
-  const extraordinariosMes = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date && e.date.slice(0,7)===gastosViewMonth);
+function ultimosMeses(n){
+  const meses = [];
+  let m = gastosViewMonth;
+  for(let i=0;i<n;i++){ meses.unshift(m); m = addMonths(m,-1); }
+  return meses;
+}
+function computeMonthSummary(mes){
+  const totalIngresos = gastosIngresos.reduce((s,i)=>s+gastosMonthlyInfo('ingresos',i,mes).real,0);
+  const totalFijos = gastosFijos.reduce((s,i)=>s+gastosMonthlyInfo('fijos',i,mes).real,0);
+  const totalProvisiones = gastosCiclicos.reduce((s,c)=>s+gastosMonthlyInfo('ciclicos',c,mes).real,0);
+  const extraordinariosMes = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date && e.date.slice(0,7)===mes);
   const totalExtraordinarios = extraordinariosMes.reduce((s,e)=>s+Number(e.amount||0),0);
   const today = todayStr();
   const esperaVencidos = gastosEspera.filter(e=>e.status==='Pendiente' && e.date && e.date < today);
   const totalEspera = esperaVencidos.reduce((s,e)=>s+deudaSaldoActual('espera', e),0);
-  const prestamosDelMes = gastosPrestamos.filter(p=>p.date && p.date.slice(0,7)===gastosViewMonth);
+  const abonosDeudaDelMes = gastosEspera.reduce((s,e)=>s + (e.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
+  const prestamosDelMes = gastosPrestamos.filter(p=>p.date && p.date.slice(0,7)===mes);
   const totalPrestamosSalida = prestamosDelMes.reduce((s,p)=>s+Number(p.amount||0),0);
-  const cobrosDelMes = gastosPrestamos.reduce((s,p)=>s + (p.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===gastosViewMonth).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
-  const prestamosPendientes = gastosPrestamos.filter(p=>esperaSaldo(p) > 0);
-  const saldoInicial = Number(gastosSaldoInicial[gastosViewMonth]||0);
-  const disponible = saldoInicial + totalIngresos + cobrosDelMes - (totalFijos + totalProvisiones + totalExtraordinarios + totalEspera + totalPrestamosSalida);
+  const cobrosDelMes = gastosPrestamos.reduce((s,p)=>s + (p.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
+  const totalAportesMetas = gastosMetas.reduce((s,m)=>s + (m.aportes||[]).filter(a=>a.date && a.date.slice(0,7)===mes).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
+  const aportesAhorrosDelMes = gastosCiclicos.reduce((s,c)=>s + ((c.contributions && c.contributions[mes]!==undefined) ? Number(c.contributions[mes]) : 0), 0);
+  const saldoInicial = Number(gastosSaldoInicial[mes]||0);
+  const totalGastos = totalFijos + totalProvisiones + totalExtraordinarios + totalEspera + totalPrestamosSalida + totalAportesMetas;
+  const disponible = saldoInicial + totalIngresos + cobrosDelMes - totalGastos;
+  return {
+    mes, totalIngresos, totalFijos, totalProvisiones, totalExtraordinarios, totalEspera,
+    totalPrestamosSalida, cobrosDelMes, totalAportesMetas, aportesAhorrosDelMes, abonosDeudaDelMes,
+    saldoInicial, totalGastos, disponible,
+    extraordinariosMes, esperaVencidos, prestamosDelMes,
+  };
+}
+function viewGastosResumen(){
+  const s = computeMonthSummary(gastosViewMonth);
+  const { totalIngresos, totalFijos, totalProvisiones, totalExtraordinarios, totalEspera,
+    totalPrestamosSalida, cobrosDelMes, totalAportesMetas, disponible, extraordinariosMes,
+    esperaVencidos, prestamosDelMes, saldoInicial } = s;
+  const prestamosPendientes = gastosPrestamos.filter(p=>deudaSaldoActual('prestamos', p) > 0);
   const mesCerrado = !!gastosMesesCerrados[gastosViewMonth];
 
   const ingresosPendientes = gastosIngresos.filter(i=>!(i.paidMonths && i.paidMonths[gastosViewMonth]));
@@ -1071,7 +1193,35 @@ function viewGastosResumen(){
     <div class="money-row"><span>En espera vencidos (hoy)</span><span class="money-negative">-${formatCOP(totalEspera)}</span></div>
     <div class="money-row"><span>Préstamos hechos (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalPrestamosSalida)}</span></div>
     <div class="money-row"><span>Cobros de préstamos (${monthLabel(gastosViewMonth)})</span><span class="money-positive">+${formatCOP(cobrosDelMes)}</span></div>
+    <div class="money-row"><span>Aportes a metas (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalAportesMetas)}</span></div>
     <div class="money-row total"><span>Dinero disponible</span><span class="${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</span></div>
+  </div>`;
+
+  const pctIngresosDeuda = s.totalIngresos>0 ? Math.round((s.abonosDeudaDelMes/s.totalIngresos)*100) : 0;
+  const tasaAhorro = s.totalIngresos>0 ? Math.round((((disponible>0?disponible:0) + s.aportesAhorrosDelMes + s.totalAportesMetas)/s.totalIngresos)*100) : 0;
+  html += `<div class="panel">
+    <h2>📊 Indicadores de ${monthLabel(gastosViewMonth)}</h2>
+    <div class="money-row">
+      <span>% de ingresos que se va en deuda</span>
+      <span class="${pctIngresosDeuda>40?'money-negative':'money-positive'}">${pctIngresosDeuda}%</span>
+    </div>
+    <div class="task-meta">${pctIngresosDeuda>40?'🟠 Por encima del 40% suele considerarse zona de riesgo.':'🟢 Dentro de un rango saludable (referencia: menos de 40%).'}</div>
+    <div class="money-row" style="margin-top:10px;">
+      <span>Tasa de ahorro</span>
+      <span class="${tasaAhorro>=15?'money-positive':'money-negative'}">${tasaAhorro}%</span>
+    </div>
+    <div class="task-meta">Incluye lo que te sobró, más lo que aportaste a Ahorros y Metas, sobre tus ingresos totales.</div>
+  </div>`;
+
+  const historico = ultimosMeses(6);
+  html += `<div class="panel">
+    <h2>📈 Tendencias (últimos ${historico.length} meses)</h2>
+    <div class="status-msg">Disponible mes a mes</div>
+    <canvas id="chart-disponible" height="160"></canvas>
+    <div class="status-msg" style="margin-top:16px;">Ingresos vs. gastos por mes</div>
+    <canvas id="chart-ingresos-gastos" height="160"></canvas>
+    <div class="status-msg" style="margin-top:16px;">Distribución del gasto — ${monthLabel(gastosViewMonth)}</div>
+    <canvas id="chart-distribucion" height="200"></canvas>
   </div>`;
 
   html += `<div class="panel">
@@ -1228,9 +1378,9 @@ function renderGastosProvisionRow(item){
     ${addFormHtml}
   </div>`;
 }
-function renderGastosPendingRow(name, amount, action){
-  const checkHtml = action ? `<button type="button" class="icon-btn" data-gastos-quick-check="${action.type}:${action.id}:${action.month||''}" title="Marcar hecho" aria-label="Marcar hecho">✅</button>` : '';
-  return `<div class="task-card status-organizar">
+function renderGastosPendingRow(name, amount, action, done){
+  const checkHtml = action ? `<button type="button" class="icon-btn" data-gastos-quick-check="${action.type}:${action.id}:${action.month||''}" title="Marcar como pagado" aria-label="Marcar como pagado">⬜</button>` : '';
+  return `<div class="task-card ${done?'status-terminada':'status-organizar'}">
     <div class="task-top">
       <div class="task-name">${escapeHtml(name)}</div>
       <div style="display:flex;align-items:center;gap:8px;">
@@ -1482,6 +1632,60 @@ async function onGastosAbonoDelete(key){
   render();
 }
 
+async function onGastosAddMeta(){
+  const name = (document.getElementById('gs_new_name_metas').value||'').trim();
+  if(!name){ alert('Escribe un nombre.'); return; }
+  const amount = parseMoney(document.getElementById('gs_new_amount_metas').value);
+  if(amount<=0){ alert('El monto objetivo debe ser mayor a cero.'); return; }
+  const fecha = document.getElementById('gs_new_fecha_metas').value || null;
+  gastosMetas.push({ id:uid(), name, montoObjetivo:amount, fechaLimite:fecha, aportes:[], createdAt:Date.now() });
+  await saveGastosMetas();
+  document.getElementById('gs_new_name_metas').value = '';
+  document.getElementById('gs_new_amount_metas').value = '';
+  document.getElementById('gs_new_fecha_metas').value = '';
+  render();
+}
+async function onGastosSaveMeta(id){
+  const meta = gastosMetas.find(x=>x.id===id);
+  if(!meta) return;
+  const name = (document.getElementById('gs_edit_name_'+id).value||'').trim();
+  if(!name){ alert('El nombre no puede estar vacío.'); return; }
+  const amount = parseMoney(document.getElementById('gs_edit_amount_'+id).value);
+  if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
+  meta.name = name;
+  meta.montoObjetivo = amount;
+  meta.fechaLimite = document.getElementById('gs_edit_fecha_'+id).value || null;
+  gastosEditingId = null;
+  await saveGastosMetas();
+  render();
+}
+async function onGastosDeleteMeta(id){
+  gastosMetas = gastosMetas.filter(x=>x.id!==id);
+  gastosPendingDeleteId = null;
+  await saveGastosMetas();
+  render();
+}
+async function onGastosMetaAporteAdd(id){
+  const meta = gastosMetas.find(x=>x.id===id);
+  if(!meta) return;
+  const amount = parseMoney(document.getElementById('gs_meta_amount_'+id).value);
+  if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
+  const date = document.getElementById('gs_meta_date_'+id).value || todayStr();
+  if(!meta.aportes) meta.aportes = [];
+  meta.aportes.push({ id:uid(), amount, date });
+  gastosEditingId = null;
+  await saveGastosMetas();
+  render();
+}
+async function onGastosMetaAporteDelete(key){
+  const [id, aporteId] = key.split(':');
+  const meta = gastosMetas.find(x=>x.id===id);
+  if(!meta || !meta.aportes) return;
+  meta.aportes = meta.aportes.filter(a=>a.id!==aporteId);
+  await saveGastosMetas();
+  render();
+}
+
 async function onGastosSaveSaldo(){
   const val = parseMoney(document.getElementById('gs_saldo_input').value);
   gastosSaldoInicial[gastosViewMonth] = val;
@@ -1492,16 +1696,7 @@ async function onGastosSaveSaldo(){
 
 async function onGastosCerrarMes(){
   const month = gastosViewMonth;
-  const totalIngresos = gastosIngresos.reduce((s,i)=>s+gastosMonthlyInfo('ingresos',i,month).real,0);
-  const totalFijos = gastosFijos.reduce((s,i)=>s+gastosMonthlyInfo('fijos',i,month).real,0);
-  const totalProvisiones = gastosCiclicos.reduce((s,c)=>s+gastosMonthlyInfo('ciclicos',c,month).real,0);
-  const extraordinariosMes = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date && e.date.slice(0,7)===month);
-  const totalExtraordinarios = extraordinariosMes.reduce((s,e)=>s+Number(e.amount||0),0);
-  const today = todayStr();
-  const esperaVencidos = gastosEspera.filter(e=>e.status==='Pendiente' && e.date && e.date < today);
-  const totalEspera = esperaVencidos.reduce((s,e)=>s+deudaSaldoActual('espera', e),0);
-  const saldoInicial = Number(gastosSaldoInicial[month]||0);
-  const disponible = saldoInicial + totalIngresos - (totalFijos + totalProvisiones + totalExtraordinarios + totalEspera);
+  const { disponible } = computeMonthSummary(month);
 
   const nextMonth = addMonths(month, 1);
   gastosSaldoInicial[nextMonth] = disponible;
@@ -1644,14 +1839,28 @@ function calcularAmortizacion(item){
     const restante = abonoMes - aInteres;
     const aCapital = Math.min(restante, capital);
     capital -= aCapital;
-    rows.push({ mes:m, interesMes, abono:abonoMes, aInteres, aCapital, saldoCapital:capital, saldoInteres:interesAcum });
+    rows.push({ mes:m, interesMes, abono:abonoMes, aInteres, aCapital, saldoCapital:capital, saldoInteres:interesAcum, saldoTotalMes: capital+interesAcum });
     if(m === endMonth || (m > endMonth)) break;
     m = addMonths(m, 1);
   }
-  return { rows, saldoCapital:capital, saldoInteres:interesAcum, saldoTotal: capital+interesAcum, sinFecha:false };
+  const saldoCapitalFinal = capital;
+  const saldoInteresFinal = interesAcum;
+  const saldoTotalFinal = saldoCapitalFinal + saldoInteresFinal;
+
+  let cierre = null;
+  if(saldoTotalFinal > 0){
+    cierre = {
+      mes: endMonth,
+      montoNecesario: saldoTotalFinal,
+      capitalQueSalda: saldoCapitalFinal,
+      interesQueSalda: saldoInteresFinal,
+    };
+  }
+
+  return { rows, saldoCapital:saldoCapitalFinal, saldoInteres:saldoInteresFinal, saldoTotal:saldoTotalFinal, sinFecha:false, cierre };
 }
 function deudaSaldoActual(cat, item){
-  if(cat==='espera') return calcularAmortizacion(item).saldoTotal;
+  if(cat==='espera' || cat==='prestamos') return calcularAmortizacion(item).saldoTotal;
   return esperaSaldo(item);
 }
 
@@ -1669,7 +1878,9 @@ function viewGastosEspera(){
     <label>Fecha en que te prestaron (necesaria para calcular interés)</label>
     <input type="date" id="gs_new_date_espera">
     <label>Tasa de interés mensual (opcional, deja en blanco o 0 si no tiene)</label>
-    <input type="text" id="gs_new_tasa_espera" placeholder="Ej. 2 (para 2% mensual)" inputmode="numeric">
+    <input type="text" id="gs_new_tasa_espera" placeholder="Ej. 2 o 1.5 (% mensual)" inputmode="decimal">
+    <label>Cuota mensual pactada (opcional)</label>
+    <input type="text" id="gs_new_cuota_espera" placeholder="Ej. 500000" inputmode="numeric">
     <button type="button" class="primary" data-gastos-add="espera" style="width:100%;margin-top:8px;">➤ Agregar</button>
   </div>`;
   html += `<div class="panel">`;
@@ -1678,6 +1889,128 @@ function viewGastosEspera(){
   sorted.forEach(item=>{ html += renderGastosDeudaItem('espera', item, LABELS_ESPERA); });
   html += `</div>`;
   return html;
+}
+
+function metaAportado(meta){
+  return (meta.aportes||[]).reduce((s,a)=>s+Number(a.amount||0),0);
+}
+function metaRitmoInfo(meta){
+  const objetivo = Number(meta.montoObjetivo||0);
+  const aportado = metaAportado(meta);
+  if(!meta.fechaLimite || !meta.createdAt){
+    return { objetivo, aportado, esperado:null, diferencia:null, pct: objetivo>0?Math.min(100,Math.round(aportado/objetivo*100)):0 };
+  }
+  const inicio = new Date(meta.createdAt);
+  const fin = new Date(meta.fechaLimite+'T00:00:00');
+  const hoy = new Date();
+  const mesesTotales = Math.max(1, (fin.getFullYear()-inicio.getFullYear())*12 + (fin.getMonth()-inicio.getMonth()));
+  let mesesTranscurridos = (hoy.getFullYear()-inicio.getFullYear())*12 + (hoy.getMonth()-inicio.getMonth());
+  mesesTranscurridos = Math.max(0, Math.min(mesesTotales, mesesTranscurridos));
+  const esperado = objetivo * (mesesTranscurridos/mesesTotales);
+  const diferencia = aportado - esperado;
+  const pct = objetivo>0 ? Math.min(100, Math.round(aportado/objetivo*100)) : 0;
+  return { objetivo, aportado, esperado, diferencia, pct };
+}
+function viewGastosMetas(){
+  let html = `<div class="panel">
+    <h2>Metas</h2>
+    <div class="status-msg">Cada aporte que registres resta de tu disponible ese mes (como un ahorro que apartas). La app te dice si vas adelantado o atrasado según el tiempo que falta para la fecha límite.</div>
+    <div class="row">
+      <div><input type="text" id="gs_new_name_metas" placeholder="Nombre (ej. Universidad Simón)"></div>
+      <div><input type="text" id="gs_new_amount_metas" placeholder="Monto objetivo" inputmode="numeric"></div>
+    </div>
+    <label>Fecha límite</label>
+    <input type="date" id="gs_new_fecha_metas">
+    <button type="button" class="primary" data-gastos-add-meta="1" style="width:100%;margin-top:8px;">➤ Agregar meta</button>
+  </div>`;
+  html += `<div class="panel">`;
+  const sorted = gastosMetas.slice().sort((a,b)=>(a.fechaLimite||'9999').localeCompare(b.fechaLimite||'9999'));
+  if(sorted.length===0) html += `<div class="empty">Sin metas registradas.</div>`;
+  sorted.forEach(meta=>{ html += renderGastosMetaItem(meta); });
+  html += `</div>`;
+  return html;
+}
+function renderGastosMetaItem(meta){
+  const key = 'metas:'+meta.id;
+  const isEditing = gastosEditingId===key;
+  const isConfirmingDelete = gastosPendingDeleteId===key;
+  const isAportando = gastosEditingId === ('aportemeta:'+meta.id);
+
+  if(isEditing){
+    return `<div class="task-card">
+      <label>Nombre</label>
+      <input type="text" id="gs_edit_name_${meta.id}" value="${escapeAttr(meta.name)}">
+      <label>Monto objetivo</label>
+      <input type="text" id="gs_edit_amount_${meta.id}" value="${meta.montoObjetivo}" inputmode="numeric">
+      <label>Fecha límite</label>
+      <input type="date" id="gs_edit_fecha_${meta.id}" value="${meta.fechaLimite||''}">
+      <div class="icon-actions" style="margin-top:8px;">
+        ${iconAction('save','save','Guardar', `data-gastos-save-meta="${meta.id}"`)}
+        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+      </div>
+    </div>`;
+  }
+
+  const info = metaRitmoInfo(meta);
+  const completa = info.pct >= 100;
+  const aportes = (meta.aportes||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+
+  let actions;
+  if(isConfirmingDelete){
+    actions = iconAction('complete','check','Confirmar', `data-gastos-confirm-delete-meta="${meta.id}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`);
+  } else {
+    actions = iconAction('edit','edit','Editar', `data-gastos-edit-meta="${meta.id}"`);
+    if(!completa) actions += `<button type="button" class="icon-btn" title="Registrar aporte" aria-label="Registrar aporte" data-meta-aporte-open="${meta.id}">💰</button>`;
+    actions += `<button type="button" class="icon-btn" title="Eliminar" aria-label="Eliminar" data-gastos-delete-meta="${meta.id}">🗑️</button>`;
+  }
+
+  const aporteFormHtml = isAportando ? `
+    <div style="margin-top:8px;">
+      <label>Monto del aporte</label>
+      <input type="text" id="gs_meta_amount_${meta.id}" placeholder="Monto" inputmode="numeric">
+      <label>Fecha</label>
+      <input type="date" id="gs_meta_date_${meta.id}" value="${todayStr()}">
+      <div class="icon-actions" style="margin-top:8px;">
+        ${iconAction('save','save','Agregar', `data-meta-aporte-add="${meta.id}"`)}
+        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+      </div>
+    </div>` : '';
+
+  const aportesListHtml = aportes.length ? aportes.map(a=>`
+    <div class="task-card" style="padding:8px 10px;">
+      <div class="task-top">
+        <div class="task-name" style="font-size:12.5px;">${a.date}</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div class="task-name" style="font-size:12.5px;">${formatCOP(a.amount)}</div>
+          <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:12px;" data-meta-aporte-delete="${meta.id}:${a.id}" title="Eliminar">🗑️</button>
+        </div>
+      </div>
+    </div>`).join('') : '';
+
+  let ritmoHtml = '';
+  if(info.esperado !== null){
+    const vaBien = info.diferencia >= 0;
+    ritmoHtml = `<div class="task-meta" style="margin-top:2px;"><span class="${vaBien?'money-positive':'money-negative'}">${vaBien?'🟢 Vas adelantado':'🟠 Vas atrasado'} ${formatCOP(Math.abs(info.diferencia))} (deberías llevar ${formatCOP(info.esperado)} a estas alturas)</span></div>`;
+  }
+
+  return `<div class="task-card ${completa?'status-terminada':'status-sin-iniciar'}">
+    <div class="task-top">
+      <div>
+        <div class="task-name">${escapeHtml(meta.name)}</div>
+        <div class="task-meta">
+          <span class="badge ${completa?'status-terminada':'status-sin-iniciar'}">${completa?'Meta cumplida':'En curso'}</span>
+          ${meta.fechaLimite?`<span>hasta ${meta.fechaLimite}</span>`:''}
+        </div>
+      </div>
+      <div class="task-name">${formatCOP(info.objetivo)}</div>
+    </div>
+    <div class="progress-track"><div class="progress-fill" style="width:${info.pct}%;"></div></div>
+    <div class="task-meta" style="margin-top:4px;">Llevas: ${formatCOP(info.aportado)} de ${formatCOP(info.objetivo)} (${info.pct}%)</div>
+    ${ritmoHtml}
+    <div class="icon-actions" style="margin-top:8px;">${actions}</div>
+    ${aporteFormHtml}
+    ${aportesListHtml ? `<div style="margin-top:8px;">${aportesListHtml}</div>` : ''}
+  </div>`;
 }
 
 function viewGastosPrestamos(){
@@ -1690,6 +2023,8 @@ function viewGastosPrestamos(){
     </div>
     <label>Fecha del préstamo</label>
     <input type="date" id="gs_new_date_prestamos">
+    <label>Tasa de interés mensual que cobras (opcional, 0 si no tiene)</label>
+    <input type="text" id="gs_new_tasa_prestamos" placeholder="Ej. 2 o 1.5 (% mensual)" inputmode="decimal">
     <button type="button" class="primary" data-gastos-add="prestamos" style="width:100%;margin-top:8px;">➤ Agregar</button>
   </div>`;
   html += `<div class="panel">`;
@@ -1714,8 +2049,10 @@ function renderGastosDeudaItem(cat, item, labels){
       <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
       <label>Fecha</label>
       <input type="date" id="gs_edit_date_${item.id}" value="${item.date||''}">
-      ${cat==='espera' ? `<label>Tasa de interés mensual (0 si no tiene)</label>
-      <input type="text" id="gs_edit_tasa_${item.id}" value="${item.tasaMensual||0}" inputmode="numeric">` : ''}
+      <label>Tasa de interés mensual (0 si no tiene)</label>
+      <input type="text" id="gs_edit_tasa_${item.id}" value="${item.tasaMensual||0}" inputmode="decimal">
+      ${cat==='espera' ? `<label>Cuota mensual pactada (opcional)</label>
+      <input type="text" id="gs_edit_cuota_${item.id}" value="${item.cuotaPactada||''}" placeholder="Ej. 500000" inputmode="numeric">` : ''}
       <div class="icon-actions" style="margin-top:8px;">
         ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
         ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
@@ -1724,7 +2061,7 @@ function renderGastosDeudaItem(cat, item, labels){
   }
 
   const total = Number(item.amount||0);
-  const conInteres = cat==='espera';
+  const conInteres = (cat==='espera' || cat==='prestamos');
   const amort = conInteres ? calcularAmortizacion(item) : null;
   const abonado = esperaAbonado(item);
   const saldo = conInteres ? amort.saldoTotal : esperaSaldo(item);
@@ -1739,7 +2076,7 @@ function renderGastosDeudaItem(cat, item, labels){
   } else {
     actions = iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`);
     if(!pagado) actions += `<button type="button" class="icon-btn" title="${labels.accionLabel}" aria-label="${labels.accionLabel}" data-gastos-abono-open="${cat}:${item.id}">${labels.icono}</button>`;
-    if(conInteres && !amort.sinFecha) actions += `<button type="button" class="icon-btn" title="Ver tabla" aria-label="Ver tabla" data-ver-tabla="${item.id}">📈</button>`;
+    if(conInteres && !amort.sinFecha) actions += `<button type="button" class="icon-btn" title="Ver tabla" aria-label="Ver tabla" data-ver-tabla="${item.id}" data-ver-tabla-cat="${cat}">📈</button>`;
     actions += iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
   }
 
@@ -1770,6 +2107,15 @@ function renderGastosDeudaItem(cat, item, labels){
     ? `<div class="task-meta" style="margin-top:4px;">Capital pendiente: ${formatCOP(amort.saldoCapital)}${item.tasaMensual?` · Interés pendiente: ${formatCOP(amort.saldoInteres)}`:''} · Total: ${formatCOP(saldo)}${item.tasaMensual?` · Tasa: ${item.tasaMensual}% mensual`:''}${amort.sinFecha?' · (agrega fecha para ver tabla)':''}</div>`
     : `<div class="task-meta" style="margin-top:4px;">${labels.abonadoLabel}: ${formatCOP(abonado)} · Saldo: ${formatCOP(saldo)}</div>`;
 
+  let cuotaHtml = '';
+  if(cat==='espera' && item.cuotaPactada){
+    const mesActualCuota = currentMonthStr();
+    const abonadoEsteMes = (item.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActualCuota).reduce((s,a)=>s+Number(a.amount||0),0);
+    const faltante = Number(item.cuotaPactada) - abonadoEsteMes;
+    const cumplida = faltante <= 0;
+    cuotaHtml = `<div class="task-meta" style="margin-top:2px;"><span class="${cumplida?'money-positive':'money-negative'}">${cumplida?'🟢':'🟠'} Cuota de ${monthLabel(mesActualCuota)}: pactada ${formatCOP(item.cuotaPactada)}, llevas ${formatCOP(abonadoEsteMes)}${cumplida?' — cumplida':` — te faltan ${formatCOP(faltante)}`}</span></div>`;
+  }
+
   return `<div class="task-card ${pagado?'status-terminada':(isVencido?'status-organizar':'status-sin-iniciar')}">
     <div class="task-top">
       <div>
@@ -1783,6 +2129,7 @@ function renderGastosDeudaItem(cat, item, labels){
     </div>
     <div class="progress-track"><div class="progress-fill" style="width:${pctCapital}%;"></div></div>
     ${detalleInteresHtml}
+    ${cuotaHtml}
     <div class="icon-actions" style="margin-top:8px;">${actions}</div>
     ${abonoFormHtml}
     ${abonosListHtml ? `<div style="margin-top:8px;">${abonosListHtml}</div>` : ''}
@@ -1853,6 +2200,72 @@ function renderGastosDatedItem(cat, item){
   </div>`;
 }
 
+function renderGastosCharts(){
+  if(typeof window.Chart === 'undefined') return;
+  const meses = ultimosMeses(6);
+  const resumenes = meses.map(m=>computeMonthSummary(m));
+  const labels = meses.map(m=>monthLabel(m).split(' ')[0].slice(0,3)+' '+m.slice(2,4));
+
+  Object.values(chartInstances).forEach(ch=>{ if(ch) ch.destroy(); });
+  chartInstances = {};
+
+  const elDisponible = document.getElementById('chart-disponible');
+  if(elDisponible){
+    chartInstances.disponible = new Chart(elDisponible, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Disponible',
+          data: resumenes.map(r=>r.disponible),
+          borderColor: '#25D366',
+          backgroundColor: 'rgba(37,211,102,0.15)',
+          fill: true,
+          tension: 0.25,
+        }]
+      },
+      options: { plugins:{legend:{display:false}}, scales:{ y:{ ticks:{ callback:v=>formatCOP(v) } } } }
+    });
+  }
+
+  const elIG = document.getElementById('chart-ingresos-gastos');
+  if(elIG){
+    chartInstances.ingresosGastos = new Chart(elIG, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label:'Ingresos', data: resumenes.map(r=>r.totalIngresos+r.cobrosDelMes), backgroundColor:'#25D366' },
+          { label:'Gastos', data: resumenes.map(r=>r.totalGastos), backgroundColor:'#c5221f' },
+        ]
+      },
+      options: { plugins:{legend:{position:'bottom'}}, scales:{ y:{ ticks:{ callback:v=>formatCOP(v) } } } }
+    });
+  }
+
+  const elDist = document.getElementById('chart-distribucion');
+  if(elDist){
+    const actual = resumenes[resumenes.length-1];
+    const dataVals = [actual.totalFijos, actual.totalProvisiones, actual.totalExtraordinarios, actual.totalEspera, actual.totalAportesMetas];
+    const dataLabels = ['Fijos','Ahorros','Imprevistos','Deuda','Metas'];
+    const colores = ['#4285F4','#128C7E','#a35b00','#c5221f','#7c3aed'];
+    const filtrados = dataLabels.map((l,i)=>({l,v:dataVals[i],c:colores[i]})).filter(x=>x.v>0);
+    if(filtrados.length===0){
+      elDist.style.display = 'none';
+    } else {
+      elDist.style.display = '';
+      chartInstances.distribucion = new Chart(elDist, {
+        type: 'doughnut',
+        data: {
+          labels: filtrados.map(x=>x.l),
+          datasets: [{ data: filtrados.map(x=>x.v), backgroundColor: filtrados.map(x=>x.c) }]
+        },
+        options: { plugins:{legend:{position:'bottom'}} }
+      });
+    }
+  }
+}
+
 function viewGastosDia(){
   const today = todayStr();
   const todayDay = new Date().getDate();
@@ -1898,6 +2311,24 @@ function viewGastosDia(){
     esperaPend.forEach(e=>{ html += renderGastosPendingRow('⏳ '+e.name+(e.date?` (vence ${e.date})`:''), deudaSaldoActual('espera', e), {type:'espera', id:e.id}); });
   }
   html += `</div>`;
+
+  const fijosPagados = gastosFijos.filter(i=>!i.isProvision && i.paidMonths && i.paidMonths[mesActual]);
+  const ciclicosPagados = gastosCiclicos.filter(c=>c.contributions && c.contributions[mesActual]!==undefined);
+  const imprevistosPagados = gastosExtraordinarios.filter(e=>e.status==='Pagado' && e.date && e.date.slice(0,7)===mesActual);
+  const esperaPagados = gastosEspera.filter(e=>e.status==='Pagado');
+
+  const anyPagado = fijosPagados.length || ciclicosPagados.length || imprevistosPagados.length || esperaPagados.length;
+  if(anyPagado){
+    html += `<div class="panel"><h2>✅ Ya pagado (${monthLabel(mesActual)})</h2>`;
+    fijosPagados.forEach(i=>{ html += renderGastosPendingRow('📌 '+i.name, i.amount, null, true); });
+    ciclicosPagados.forEach(c=>{
+      const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
+      html += renderGastosPendingRow('🐷 '+c.name, provision, null, true);
+    });
+    imprevistosPagados.forEach(e=>{ html += renderGastosPendingRow('⚡ '+e.name, e.amount, null, true); });
+    esperaPagados.forEach(e=>{ html += renderGastosPendingRow('⏳ '+e.name+' (saldado)', e.amount, null, true); });
+    html += `</div>`;
+  }
 
   return html;
 }
@@ -2343,6 +2774,30 @@ function bindEvents(){
   document.querySelectorAll('[data-gastos-abono-delete]').forEach(b=>{
     b.onclick = ()=>onGastosAbonoDelete(b.getAttribute('data-gastos-abono-delete'));
   });
+  document.querySelectorAll('[data-gastos-add-meta]').forEach(b=>{
+    b.onclick = ()=>onGastosAddMeta();
+  });
+  document.querySelectorAll('[data-gastos-edit-meta]').forEach(b=>{
+    b.onclick = ()=>{ gastosEditingId = 'metas:'+b.getAttribute('data-gastos-edit-meta'); gastosPendingDeleteId=null; render(); };
+  });
+  document.querySelectorAll('[data-gastos-save-meta]').forEach(b=>{
+    b.onclick = ()=>onGastosSaveMeta(b.getAttribute('data-gastos-save-meta'));
+  });
+  document.querySelectorAll('[data-gastos-delete-meta]').forEach(b=>{
+    b.onclick = ()=>{ gastosPendingDeleteId = 'metas:'+b.getAttribute('data-gastos-delete-meta'); render(); };
+  });
+  document.querySelectorAll('[data-gastos-confirm-delete-meta]').forEach(b=>{
+    b.onclick = ()=>onGastosDeleteMeta(b.getAttribute('data-gastos-confirm-delete-meta'));
+  });
+  document.querySelectorAll('[data-meta-aporte-open]').forEach(b=>{
+    b.onclick = ()=>{ gastosEditingId = 'aportemeta:'+b.getAttribute('data-meta-aporte-open'); render(); };
+  });
+  document.querySelectorAll('[data-meta-aporte-add]').forEach(b=>{
+    b.onclick = ()=>onGastosMetaAporteAdd(b.getAttribute('data-meta-aporte-add'));
+  });
+  document.querySelectorAll('[data-meta-aporte-delete]').forEach(b=>{
+    b.onclick = ()=>onGastosMetaAporteDelete(b.getAttribute('data-meta-aporte-delete'));
+  });
   document.querySelectorAll('[data-gastos-edit-saldo]').forEach(b=>{
     b.onclick = ()=>{ gastosEditingId = 'saldo'; render(); };
   });
@@ -2580,10 +3035,15 @@ async function onGastosAdd(cat){
     const date = document.getElementById('gs_new_date_'+cat).value || null;
     if((cat==='extraordinarios' || cat==='prestamos') && !date){ alert('Indica la fecha.'); return; }
     const newDeuda = { id:uid(), name, amount, date, status:'Pendiente', abonos:[] };
-    if(cat==='espera'){
-      const tasaEl = document.getElementById('gs_new_tasa_espera');
+    if(cat==='espera' || cat==='prestamos'){
+      const tasaEl = document.getElementById('gs_new_tasa_'+cat);
       const tasa = tasaEl ? parseFloat(tasaEl.value) : 0;
       newDeuda.tasaMensual = isNaN(tasa) ? 0 : tasa;
+    }
+    if(cat==='espera'){
+      const cuotaEl = document.getElementById('gs_new_cuota_espera');
+      const cuota = cuotaEl ? parseMoney(cuotaEl.value) : 0;
+      if(cuota>0) newDeuda.cuotaPactada = cuota;
     }
     gastosListFor(cat).push(newDeuda);
     await saveGastos(cat);
@@ -2609,6 +3069,10 @@ async function onGastosAdd(cat){
   if(periodEl) periodEl.value='';
   const tasaEl2 = document.getElementById('gs_new_tasa_espera');
   if(tasaEl2) tasaEl2.value='';
+  const tasaEl3 = document.getElementById('gs_new_tasa_prestamos');
+  if(tasaEl3) tasaEl3.value='';
+  const cuotaEl2 = document.getElementById('gs_new_cuota_espera');
+  if(cuotaEl2) cuotaEl2.value='';
   render();
 }
 
@@ -2639,10 +3103,15 @@ async function onGastosSaveEdit(key){
       const dueDay = dueDayEl ? parseInt(dueDayEl.value,10) : NaN;
       item.dueDay = (dueDay>=1 && dueDay<=31) ? dueDay : null;
     }
-    if(cat==='espera'){
+    if(cat==='espera' || cat==='prestamos'){
       const tasaEl = document.getElementById('gs_edit_tasa_'+id);
       const tasa = tasaEl ? parseFloat(tasaEl.value) : 0;
       item.tasaMensual = isNaN(tasa) ? 0 : tasa;
+    }
+    if(cat==='espera'){
+      const cuotaEl = document.getElementById('gs_edit_cuota_'+id);
+      const cuota = cuotaEl ? parseMoney(cuotaEl.value) : 0;
+      item.cuotaPactada = cuota>0 ? cuota : null;
     }
   }
 
