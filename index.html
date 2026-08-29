@@ -283,6 +283,7 @@ let gastosMetas = [];
 let chartInstances = {};
 let gastosImportPendingData = null;
 let gastosImportConfirmPending = false;
+let gastosVistaLista = {};
 let gastosSubTab = 'resumen';
 let gastosViewMonth = null;
 let gastosEditingId = null;
@@ -1301,103 +1302,6 @@ function gastosProvisionSpent(item, month){
   const txs = (item.transactions && item.transactions[month]) || [];
   return txs.reduce((s,t)=>s+Number(t.amount||0),0);
 }
-function renderGastosProvisionManage(item){
-  const month = gastosViewMonth;
-  const key = 'fijos:'+item.id;
-  const isEditing = gastosEditingId===key;
-  const isConfirmingDelete = gastosPendingDeleteId===key;
-  const isAdding = gastosEditingId === ('provquick:'+item.id);
-
-  if(isEditing){
-    return `<div class="task-card">
-      <label>Nombre</label>
-      <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
-      <label>Presupuesto mensual</label>
-      <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
-      <div class="icon-actions" style="margin-top:8px;">
-        ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
-        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-      </div>
-    </div>`;
-  }
-
-  const plan = Number(item.amount||0);
-  const spent = gastosProvisionSpent(item, month);
-  const remaining = plan - spent;
-  const pct = plan>0 ? Math.min(100, Math.round((spent/plan)*100)) : 0;
-  const txs = (item.transactions && item.transactions[month]) || [];
-
-  let headerActions = isConfirmingDelete
-    ? iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`)
-    : iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`) + iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
-
-  const txListHtml = txs.length ? txs.map(t=>`
-    <div class="task-card" style="padding:8px 10px;">
-      <div class="task-top">
-        <div class="task-name" style="font-size:12.5px;font-weight:500;">${escapeHtml(t.desc||item.name)} <span style="color:var(--muted);font-weight:400;">· ${t.date}</span></div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div class="task-name" style="font-size:12.5px;">${formatCOP(t.amount)}</div>
-          <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:12px;" data-gastos-provision-delete-tx="fijos:${item.id}:${t.id}" title="Eliminar gasto">🗑️</button>
-        </div>
-      </div>
-    </div>`).join('') : `<div class="empty">Sin gastos registrados en ${monthLabel(month)}.</div>`;
-
-  const addFormHtml = isAdding ? `
-    <div style="margin-top:8px;">
-      <label>Asunto</label>
-      <input type="text" id="gs_prov_desc_${item.id}" value="${escapeAttr(item.name)}">
-      <label>Monto del gasto</label>
-      <input type="text" id="gs_prov_amount_${item.id}" placeholder="Monto" inputmode="numeric">
-      <div class="icon-actions" style="margin-top:8px;">
-        ${iconAction('save','save','Agregar', `data-gastos-provision-add="${item.id}"`)}
-        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-      </div>
-    </div>` : `<button type="button" class="secondary" data-gastos-provision-open="${item.id}" style="width:100%;margin-top:8px;">➤ Registrar gasto</button>`;
-
-  return `<div class="task-card">
-    <div class="task-top">
-      <div style="flex:1;">
-        <div class="task-name">🐖 ${escapeHtml(item.name)} <span class="badge">Provisión</span></div>
-        <div class="task-meta">Presupuestado: ${formatCOP(plan)} · Gastado: ${formatCOP(spent)}</div>
-      </div>
-      <div class="task-name ${remaining>=0?'money-positive':'money-negative'}">${formatCOP(remaining)}</div>
-    </div>
-    <div class="progress-track"><div class="progress-fill" style="width:${pct}%;${pct>100?'background:var(--danger);':''}"></div></div>
-    <div class="icon-actions" style="margin-top:8px;">${headerActions}</div>
-    ${addFormHtml}
-    <div style="margin-top:8px;">${txListHtml}</div>
-  </div>`;
-}
-function renderGastosProvisionRow(item){
-  const month = gastosViewMonth;
-  const isAdding = gastosEditingId === ('provquick:'+item.id);
-  const plan = Number(item.amount||0);
-  const spent = gastosProvisionSpent(item, month);
-  const remaining = plan - spent;
-  const pct = plan>0 ? Math.min(100, Math.round((spent/plan)*100)) : 0;
-
-  const addFormHtml = isAdding ? `
-    <div style="margin-top:8px;">
-      <input type="text" id="gs_prov_desc_${item.id}" value="${escapeAttr(item.name)}" style="margin-bottom:6px;">
-      <input type="text" id="gs_prov_amount_${item.id}" placeholder="Monto del gasto" inputmode="numeric">
-      <div class="icon-actions" style="margin-top:8px;">
-        ${iconAction('save','save','Agregar', `data-gastos-provision-add="${item.id}"`)}
-        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-      </div>
-    </div>` : `<div class="icon-actions" style="margin-top:8px;">${iconAction('edit','edit','Registrar gasto', `data-gastos-provision-open="${item.id}"`)}</div>`;
-
-  return `<div class="task-card">
-    <div class="task-top">
-      <div style="flex:1;">
-        <div class="task-name">🐖 ${escapeHtml(item.name)}</div>
-        <div class="task-meta">Presupuestado: ${formatCOP(plan)} · Gastado: ${formatCOP(spent)}</div>
-      </div>
-      <div class="task-name ${remaining>=0?'money-positive':'money-negative'}">${formatCOP(remaining)}</div>
-    </div>
-    <div class="progress-track"><div class="progress-fill" style="width:${pct}%;${pct>100?'background:var(--danger);':''}"></div></div>
-    ${addFormHtml}
-  </div>`;
-}
 function renderGastosPendingRow(name, amount, action, done){
   return `<div class="task-card ${done?'status-terminada':'status-organizar'}">
     <div class="task-top">
@@ -1695,7 +1599,7 @@ function viewGastosSimpleList(cat, list, title){
   const hasProvisions = cat==='fijos' && list.some(i=>i.isProvision);
   let html = renderMonthNav();
   html += `<div class="panel"><h2>${title}</h2>
-    <div class="status-msg">El check ✅ marca ${cat==='ingresos'?'recibido':'pagado'} para ${monthLabel(gastosViewMonth)} — usa las flechas de arriba para marcar otro mes.</div>
+    <div class="status-msg">"Registrar ${cat==='ingresos'?'cobro':'pago'}" guarda la fecha y el monto real de ${monthLabel(gastosViewMonth)} — usa las flechas de arriba para ver otro mes.</div>
     <div class="row">
       <div><input type="text" id="gs_new_name_${cat}" placeholder="Nombre"></div>
       <div><input type="text" id="gs_new_amount_${cat}" placeholder="Monto" inputmode="numeric"></div>
@@ -1709,94 +1613,157 @@ function viewGastosSimpleList(cat, list, title){
     <input type="text" id="gs_new_dueday_ingresos" inputmode="numeric" placeholder="1-31" maxlength="2" style="max-width:100px;">` : ''}
     <button type="button" class="primary" data-gastos-add="${cat}" style="width:100%;margin-top:8px;">➤ Agregar</button>
   </div>`;
+
   html += `<div class="panel">`;
-  if(list.length===0) html += `<div class="empty">Sin registros.</div>`;
-  list.forEach(item=>{
-    if(cat==='fijos' && item.isProvision) html += renderGastosProvisionManage(item);
-    else html += renderGastosSimpleItem(cat, item);
-  });
+  if(list.length===0){
+    html += `<div class="empty">Sin registros.</div>`;
+  } else {
+    html += renderGastosTablaCompacta(cat, list);
+  }
   const total = list.reduce((s,i)=> s + (i.isProvision ? gastosProvisionSpent(i, gastosViewMonth) : Number(i.amount||0)), 0);
   html += `<div class="money-row total"><span>Total</span><span>${formatCOP(total)}</span></div>`;
   if(hasProvisions) html += `<div class="task-meta" style="margin-top:4px;">En las provisiones, este total suma lo que llevas gastado este mes, no el presupuesto completo.</div>`;
   html += `</div>`;
   return html;
 }
-function renderGastosSimpleItem(cat, item){
-  const key = cat+':'+item.id;
-  const isEditing = gastosEditingId===key;
-  const isConfirmingDelete = gastosPendingDeleteId===key;
-  if(isEditing){
-    return `<div class="task-card">
-      <label>Nombre</label>
-      <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
-      <label>Monto</label>
-      <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
-      ${cat==='fijos' ? `<label>Día del mes en que vence (opcional)</label>
-      <input type="text" id="gs_edit_dueday_${item.id}" value="${item.dueDay||''}" inputmode="numeric" maxlength="2" style="max-width:100px;">` : ''}
-      ${cat==='ingresos' ? `<label>Día del mes en que esperas recibirlo (opcional)</label>
-      <input type="text" id="gs_edit_dueday_${item.id}" value="${item.dueDay||''}" inputmode="numeric" maxlength="2" style="max-width:100px;">` : ''}
-      <div class="icon-actions" style="margin-top:8px;">
-        ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
-        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-      </div>
-    </div>`;
-  }
-  const info = gastosMonthlyInfo(cat, item, gastosViewMonth);
-  const registrado = estaRegistrado(item, gastosViewMonth);
-  const isRegistrando = gastosEditingId === ('registrar:'+cat+':'+item.id);
-  const diff = info.real - info.plan;
-  let varianceHtml = '';
-  if(diff !== 0){
-    const isIncome = cat==='ingresos';
-    const good = isIncome ? diff>0 : diff<0;
-    const monthlyLabel = isIncome
-      ? (diff>0 ? `+${formatCOP(diff)} de más recibido este mes` : `${formatCOP(diff)} menos recibido este mes`)
-      : (diff<0 ? `Ahorraste ${formatCOP(Math.abs(diff))} este mes` : `Pagaste ${formatCOP(diff)} de más este mes`);
-    varianceHtml = `<div class="task-meta" style="margin-top:4px;"><span class="${good?'money-positive':'money-negative'}">${good?'💚':'🔴'} ${monthlyLabel}</span></div>`;
-  }
-  const excedente = excedenteAcumulado(item);
-  let excedenteHtml = '';
-  if(excedente !== 0){
-    const isIncome = cat==='ingresos';
-    const bueno = isIncome ? excedente < 0 : excedente > 0;
-    const label = isIncome
-      ? (excedente<0 ? `Acumulado: +${formatCOP(Math.abs(excedente))} de más recibido` : `Acumulado: ${formatCOP(excedente)} menos recibido`)
-      : (excedente>0 ? `Excedente acumulado: ${formatCOP(excedente)} disponible` : `Déficit acumulado: ${formatCOP(Math.abs(excedente))}`);
-    excedenteHtml = `<div class="task-meta" style="margin-top:2px;"><span class="${bueno?'money-positive':'money-negative'}">${bueno?'🟢':'🟠'} ${label}</span></div>`;
-  }
-  const actions = isConfirmingDelete
-    ? iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`)
-    : iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`) + iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
 
-  const registroFormHtml = isRegistrando ? `
-    <div style="margin-top:8px;">
-      <label>Fecha real</label>
-      <input type="date" id="gs_reg_fecha_${item.id}" value="${todayStr()}">
-      <label>Monto real</label>
-      <input type="text" id="gs_reg_monto_${item.id}" value="${info.plan}" inputmode="numeric">
-      <div class="icon-actions" style="margin-top:8px;">
-        ${iconAction('save','save','Guardar', `data-gastos-registrar-pago="${key}"`)}
-        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-      </div>
-    </div>` : '';
+function renderGastosTablaCompacta(cat, list){
+  const todayDay = new Date().getDate();
+  const rows = list.map(item=>{
+    const key = cat+':'+item.id;
+    const isFullEditing = gastosEditingId === key;
 
-  const registroInfoHtml = registrado
-    ? `<div class="task-meta" style="margin-top:2px;">✅ ${cat==='ingresos'?'Recibido':'Pagado'}${info.fecha?` el ${info.fecha}`:''} · <button type="button" class="icon-btn" style="width:auto;height:auto;padding:2px 6px;font-size:11px;" data-gastos-registrar-open="${key}">✏️ corregir</button> · <button type="button" class="icon-btn" style="width:auto;height:auto;padding:2px 6px;font-size:11px;" data-gastos-registro-quitar="${key}">↩️ quitar</button></div>`
-    : (isRegistrando ? '' : `<button type="button" class="secondary" data-gastos-registrar-open="${key}" style="width:100%;margin-top:8px;">📝 Registrar ${cat==='ingresos'?'cobro':'pago'}</button>`);
+    if(isFullEditing){
+      return `<tr><td colspan="5" style="padding:8px;background:var(--panel);">
+        <div class="task-card" style="margin:0;">
+          <label>Nombre</label>
+          <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
+          <label>Monto</label>
+          <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
+          ${(item.dueDay!==undefined) ? `<label>Día del mes</label>
+          <input type="text" id="gs_edit_dueday_${item.id}" value="${item.dueDay||''}" inputmode="numeric" maxlength="2" style="max-width:100px;">` : ''}
+          <div class="icon-actions" style="margin-top:8px;">
+            ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
+            ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+            ${iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`)}
+          </div>
+        </div>
+      </td></tr>`;
+    }
 
-  return `<div class="task-card ${registrado?'status-terminada':''}">
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:110px;">
-        <div class="task-name">${escapeHtml(item.name)}</div>
-        <div class="task-meta">Planeado: ${formatCOP(info.plan)}${(item.dueDay) ? ` · día ${item.dueDay}` : ''}</div>
-      </div>
-    </div>
-    ${registrado ? `<div class="task-meta" style="margin-top:2px;">Real: ${formatCOP(info.real)}</div>` : ''}
-    ${varianceHtml}
-    ${excedenteHtml}
-    ${registroInfoHtml}
-    ${registroFormHtml}
-    <div class="icon-actions" style="margin-top:8px;">${actions}</div>
+    if(item.isProvision){
+      const isAdding = gastosEditingId === ('provquick:'+item.id);
+      const isViewing = gastosEditingId === ('provview:'+item.id);
+      if(isAdding){
+        return `<tr><td colspan="5" style="padding:8px;background:var(--panel);">
+          <div class="task-card" style="margin:0;">
+            <label>Asunto</label>
+            <input type="text" id="gs_prov_desc_${item.id}" value="${escapeAttr(item.name)}">
+            <label>Monto del gasto</label>
+            <input type="text" id="gs_prov_amount_${item.id}" placeholder="Monto" inputmode="numeric">
+            <div class="icon-actions" style="margin-top:8px;">
+              ${iconAction('save','save','Agregar', `data-gastos-provision-add="${item.id}"`)}
+              ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+            </div>
+          </div>
+        </td></tr>`;
+      }
+      const spent = gastosProvisionSpent(item, gastosViewMonth);
+      const plan = Number(item.amount||0);
+      const disponible = plan - spent;
+      const mainRow = `<tr>
+        <td style="text-align:left;">🐖 ${escapeHtml(item.name)} <span style="color:var(--muted);">(provisión)</span></td>
+        <td>${formatCOP(plan)}</td>
+        <td>${formatCOP(spent)}</td>
+        <td class="${disponible>=0?'money-positive':'money-negative'}">Disp: ${formatCOP(disponible)}</td>
+        <td>
+          <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-provision-open="${item.id}" title="Registrar gasto">📝</button>
+          <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-tabla-provision-ver="${item.id}" title="Ver movimientos">👁️</button>
+          <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-edit="${key}" title="Editar">✏️</button>
+        </td>
+      </tr>`;
+      let detailRow = '';
+      if(isViewing){
+        const txs = (item.transactions && item.transactions[gastosViewMonth]) || [];
+        const txHtml = txs.length ? txs.map(t=>`
+          <div class="task-card" style="padding:6px 8px;margin-bottom:4px;">
+            <div class="task-top">
+              <div class="task-name" style="font-size:12px;">${escapeHtml(t.desc||item.name)} <span style="color:var(--muted);font-weight:400;">· ${t.date}</span></div>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <div class="task-name" style="font-size:12px;">${formatCOP(t.amount)}</div>
+                <button type="button" class="icon-btn" style="width:24px;height:24px;font-size:10px;" data-gastos-provision-delete-tx="fijos:${item.id}:${t.id}" title="Eliminar">🗑️</button>
+              </div>
+            </div>
+          </div>`).join('') : `<div class="empty">Sin gastos registrados este mes.</div>`;
+        detailRow = `<tr><td colspan="5" style="padding:8px;background:var(--panel);">${txHtml}</td></tr>`;
+      }
+      return mainRow + detailRow;
+    }
+
+    const info = gastosMonthlyInfo(cat, item, gastosViewMonth);
+    const registrado = estaRegistrado(item, gastosViewMonth);
+    const isRegistrando = gastosEditingId === ('tablareg:'+key);
+    if(isRegistrando){
+      return `<tr><td colspan="5" style="padding:8px;background:var(--panel);">
+        <div class="task-card" style="margin:0;">
+          <label>Fecha real</label>
+          <input type="date" id="gs_reg_fecha_${item.id}" value="${todayStr()}">
+          <label>Monto real</label>
+          <input type="text" id="gs_reg_monto_${item.id}" value="${info.plan}" inputmode="numeric">
+          <div class="icon-actions" style="margin-top:8px;">
+            ${iconAction('save','save','Guardar', `data-gastos-registrar-pago="${key}"`)}
+            ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+          </div>
+        </div>
+      </td></tr>`;
+    }
+
+    let estadoHtml;
+    if(registrado){
+      estadoHtml = `<span class="money-positive">✅ ${info.fecha||''}</span>`;
+    } else if(item.dueDay && item.dueDay < todayDay){
+      estadoHtml = `<span class="money-negative">🔴 Vencido (día ${item.dueDay})</span>`;
+    } else if(item.dueDay){
+      estadoHtml = `Pendiente (día ${item.dueDay})`;
+    } else {
+      estadoHtml = `Pendiente`;
+    }
+
+    let variacionHtml = '';
+    if(registrado){
+      const diff = info.real - info.plan;
+      if(diff !== 0){
+        const isIncome = cat==='ingresos';
+        const good = isIncome ? diff>0 : diff<0;
+        variacionHtml = `<div style="font-size:10.5px;margin-top:2px;" class="${good?'money-positive':'money-negative'}">${good?'💚':'🔴'} ${diff>0?'+':''}${formatCOP(diff)} vs. plan</div>`;
+      }
+    }
+    const excedente = excedenteAcumulado(item);
+    if(excedente !== 0){
+      const isIncome = cat==='ingresos';
+      const bueno = isIncome ? excedente < 0 : excedente > 0;
+      variacionHtml += `<div style="font-size:10.5px;margin-top:1px;" class="${bueno?'money-positive':'money-negative'}">${bueno?'🟢':'🟠'} Acum: ${formatCOP(Math.abs(excedente))}</div>`;
+    }
+
+    return `<tr>
+      <td style="text-align:left;">${escapeHtml(item.name)}${variacionHtml}</td>
+      <td>${formatCOP(info.plan)}</td>
+      <td>${registrado ? formatCOP(info.real) : '—'}</td>
+      <td>${estadoHtml}</td>
+      <td>
+        ${registrado
+          ? `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-registro-quitar="${key}" title="Quitar registro">↩️</button>`
+          : `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-tabla-registrar-open="${key}" title="Registrar">📝</button>`
+        }
+        <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-edit="${key}" title="Editar">✏️</button>
+      </td>
+    </tr>`;
+  }).join('');
+  return `<div style="overflow-x:auto;">
+    <table class="amort-table">
+      <thead><tr><th>Nombre</th><th>Planeado</th><th>Real/Gastado</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
   </div>`;
 }
 
@@ -2158,69 +2125,79 @@ function viewGastosDatedList(cat, list, title, filterByMonth){
   </div>`;
   html += `<div class="panel">`;
   const sorted = list.slice().sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
-  if(sorted.length===0) html += `<div class="empty">Sin registros.</div>`;
-  sorted.forEach(item=>{
-    html += renderGastosDatedItem(cat, item);
-  });
+  if(sorted.length===0){
+    html += `<div class="empty">Sin registros.</div>`;
+  } else {
+    html += renderGastosDatedTabla(cat, sorted);
+  }
   html += `</div>`;
   return html;
 }
-function renderGastosDatedItem(cat, item){
-  const key = cat+':'+item.id;
-  const isEditing = gastosEditingId===key;
-  const isConfirmingDelete = gastosPendingDeleteId===key;
-  if(isEditing){
-    return `<div class="task-card">
-      <label>Nombre</label>
-      <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
-      <label>Monto</label>
-      <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
-      <label>Fecha</label>
-      <input type="date" id="gs_edit_date_${item.id}" value="${item.date||''}">
-      <div class="icon-actions" style="margin-top:8px;">
-        ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
-        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-      </div>
-    </div>`;
-  }
-  const isVencido = item.status==='Pendiente' && item.date && item.date < todayStr();
-  const statusClassLocal = item.status==='Pagado' ? 'status-terminada' : (isVencido ? 'status-organizar' : 'status-sin-iniciar');
-  const isRegistrando = gastosEditingId === ('registrarimprevisto:'+item.id);
-  let actions;
-  if(isConfirmingDelete){
-    actions = iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`);
-  } else {
-    actions = iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`);
-    if(item.status==='Pagado') actions += iconAction('cancel','x','Reabrir', `data-gastos-toggle-status="${key}"`);
-    actions += iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
-  }
-  const registroFormHtml = isRegistrando ? `
-    <div style="margin-top:8px;">
-      <label>Fecha real de pago</label>
-      <input type="date" id="gs_reg_imprevisto_fecha_${item.id}" value="${todayStr()}">
-      <div class="icon-actions" style="margin-top:8px;">
-        ${iconAction('save','save','Guardar', `data-gastos-registrar-imprevisto-save="${item.id}"`)}
-        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-      </div>
-    </div>` : '';
-  const registroBotonesHtml = (item.status==='Pendiente' && !isRegistrando) ? `
-    <button type="button" class="secondary" data-gastos-registrar-imprevisto-open="${item.id}" style="width:100%;margin-top:8px;">📝 Registrar pago</button>
-    <button type="button" class="secondary" data-gastos-aplazar-imprevisto="${item.id}" style="width:100%;margin-top:6px;">⏭️ Aplazar al mes siguiente</button>` : '';
-  return `<div class="task-card ${statusClassLocal}">
-    <div class="task-top">
-      <div>
-        <div class="task-name">${escapeHtml(item.name)}</div>
-        <div class="task-meta">
-          <span class="badge ${statusClassLocal}">${item.status}${isVencido?' · vencido':''}</span>
-          ${item.date?`<span>Planeado: ${item.date}</span>`:''}
+function renderGastosDatedTabla(cat, sorted){
+  const rows = sorted.map(item=>{
+    const key = cat+':'+item.id;
+    const isEditing = gastosEditingId===key;
+    if(isEditing){
+      return `<tr><td colspan="5" style="padding:8px;background:var(--panel);">
+        <div class="task-card" style="margin:0;">
+          <label>Nombre</label>
+          <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
+          <label>Monto</label>
+          <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
+          <label>Fecha</label>
+          <input type="date" id="gs_edit_date_${item.id}" value="${item.date||''}">
+          <div class="icon-actions" style="margin-top:8px;">
+            ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
+            ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+            ${iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`)}
+          </div>
         </div>
-        ${item.fechaPago?`<div class="task-meta">Real: ${item.fechaPago}</div>`:''}
-      </div>
-      <div class="task-name">${formatCOP(item.amount)}</div>
-    </div>
-    <div class="icon-actions" style="margin-top:8px;">${actions}</div>
-    ${registroFormHtml}
-    ${registroBotonesHtml}
+      </td></tr>`;
+    }
+    const isVencido = item.status==='Pendiente' && item.date && item.date < todayStr();
+    const isRegistrando = gastosEditingId === ('registrarimprevisto:'+item.id);
+    if(isRegistrando){
+      return `<tr><td colspan="5" style="padding:8px;background:var(--panel);">
+        <div class="task-card" style="margin:0;">
+          <label>Fecha real de pago</label>
+          <input type="date" id="gs_reg_imprevisto_fecha_${item.id}" value="${todayStr()}">
+          <div class="icon-actions" style="margin-top:8px;">
+            ${iconAction('save','save','Guardar', `data-gastos-registrar-imprevisto-save="${item.id}"`)}
+            ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+          </div>
+        </div>
+      </td></tr>`;
+    }
+
+    let estadoHtml;
+    if(item.status==='Pagado') estadoHtml = `<span class="money-positive">✅ ${item.fechaPago||''}</span>`;
+    else if(isVencido) estadoHtml = `<span class="money-negative">🔴 Vencido</span>`;
+    else estadoHtml = `Pendiente`;
+
+    let accionesExtra = '';
+    let accionBtn;
+    if(item.status==='Pagado'){
+      accionBtn = `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-toggle-status="${key}" title="Reabrir">↩️</button>`;
+    } else {
+      accionBtn = `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-registrar-imprevisto-open="${item.id}" title="Registrar pago">📝</button>
+        <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-aplazar-imprevisto="${item.id}" title="Aplazar al mes siguiente">⏭️</button>`;
+    }
+
+    return `<tr>
+      <td style="text-align:left;">${escapeHtml(item.name)}${item.date?`<div style="font-size:10.5px;color:var(--muted);margin-top:2px;">Planeado: ${item.date}</div>`:''}</td>
+      <td>${formatCOP(item.amount)}</td>
+      <td>${estadoHtml}</td>
+      <td>
+        ${accionBtn}
+        <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-edit="${key}" title="Editar">✏️</button>
+      </td>
+    </tr>`;
+  }).join('');
+  return `<div style="overflow-x:auto;">
+    <table class="amort-table">
+      <thead><tr><th>Nombre</th><th>Monto</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
   </div>`;
 }
 
@@ -2580,69 +2557,71 @@ function viewGastosCiclicos(){
     <button type="button" class="primary" data-gastos-add="ciclicos" style="width:100%;margin-top:8px;">➤ Agregar</button>
   </div>`;
   html += `<div class="panel">`;
-  if(gastosCiclicos.length===0) html += `<div class="empty">Sin registros.</div>`;
-  gastosCiclicos.forEach(c=>{
-    html += renderGastosCiclicoItem(c);
-  });
+  if(gastosCiclicos.length===0){
+    html += `<div class="empty">Sin registros.</div>`;
+  } else {
+    html += renderGastosCiclicosTabla();
+  }
   html += `</div>`;
   return html;
 }
-function renderGastosCiclicoItem(c){
-  const key = 'ciclicos:'+c.id;
-  const isEditing = gastosEditingId===key;
-  const isConfirmingDelete = gastosPendingDeleteId===key;
-  if(isEditing){
-    return `<div class="task-card">
-      <label>Nombre</label>
-      <input type="text" id="gs_edit_name_${c.id}" value="${escapeAttr(c.name)}">
-      <label>Monto total</label>
-      <input type="text" id="gs_edit_amount_${c.id}" value="${c.totalAmount}" inputmode="numeric">
-      <label>Cada cuántos meses</label>
-      <input type="text" id="gs_edit_period_${c.id}" value="${c.periodMonths}" inputmode="numeric">
-      <label>Próxima fecha</label>
-      <input type="date" id="gs_edit_date_${c.id}" value="${c.nextDueDate||''}">
-      <div class="icon-actions" style="margin-top:8px;">
-        ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
-        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-      </div>
-    </div>`;
-  }
-  const total = Number(c.totalAmount||0);
-  const acumulado = ciclicoAccumulated(c);
-  const provision = total/Math.max(1,Number(c.periodMonths||1));
-  const pct = total>0 ? Math.min(100, Math.round((acumulado/total)*100)) : 0;
-  const yaAporto = !!(c.contributions && c.contributions[gastosViewMonth]!==undefined);
-  const completo = acumulado >= total && total>0;
-
-  let actions;
-  if(isConfirmingDelete){
-    actions = iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`);
-  } else {
-    actions = iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`);
-    if(completo){
-      actions += iconAction('complete','check','Marcar pagado', `data-gastos-mark-paid="${c.id}"`);
-    } else {
-      actions += yaAporto
-        ? `<button type="button" class="icon-btn" title="Deshacer aporte de este mes" aria-label="Deshacer aporte de este mes" data-gastos-undo-contribute="${c.id}">↩️</button>`
-        : `<button type="button" class="icon-btn" title="Aportar este mes" aria-label="Aportar este mes" data-gastos-contribute="${c.id}">🐷</button>`;
+function renderGastosCiclicosTabla(){
+  const rows = gastosCiclicos.map(c=>{
+    const key = 'ciclicos:'+c.id;
+    const isEditing = gastosEditingId===key;
+    if(isEditing){
+      return `<tr><td colspan="5" style="padding:8px;background:var(--panel);">
+        <div class="task-card" style="margin:0;">
+          <label>Nombre</label>
+          <input type="text" id="gs_edit_name_${c.id}" value="${escapeAttr(c.name)}">
+          <label>Monto total</label>
+          <input type="text" id="gs_edit_amount_${c.id}" value="${c.totalAmount}" inputmode="numeric">
+          <label>Cada cuántos meses</label>
+          <input type="text" id="gs_edit_period_${c.id}" value="${c.periodMonths}" inputmode="numeric">
+          <label>Próxima fecha</label>
+          <input type="date" id="gs_edit_date_${c.id}" value="${c.nextDueDate||''}">
+          <div class="icon-actions" style="margin-top:8px;">
+            ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
+            ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+            ${iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`)}
+          </div>
+        </div>
+      </td></tr>`;
     }
-    actions += iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
-  }
+    const total = Number(c.totalAmount||0);
+    const acumulado = ciclicoAccumulated(c);
+    const provision = total/Math.max(1,Number(c.periodMonths||1));
+    const pct = total>0 ? Math.min(100, Math.round((acumulado/total)*100)) : 0;
+    const yaAporto = !!(c.contributions && c.contributions[gastosViewMonth]!==undefined);
+    const completo = acumulado >= total && total>0;
 
-  return `<div class="task-card">
-    <div class="task-top">
-      <div>
-        <div class="task-name">${escapeHtml(c.name)}</div>
-        <div class="task-meta">Provisión mensual: ${formatCOP(provision)} · cada ${c.periodMonths} mes(es)${c.nextDueDate?` · próximo: ${c.nextDueDate}`:''}</div>
-      </div>
-      <div class="task-name">${formatCOP(total)}</div>
-    </div>
-    <div class="progress-track"><div class="progress-fill" style="width:${pct}%;"></div></div>
-    <div class="task-meta" style="margin-top:4px;">${formatCOP(acumulado)} de ${formatCOP(total)} (${pct}%)${completo?' · ¡completo!':''}</div>
-    <div class="icon-actions" style="margin-top:8px;">${actions}</div>
+    let accionBtn;
+    if(completo){
+      accionBtn = `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-mark-paid="${c.id}" title="Marcar pagado">✅</button>`;
+    } else if(yaAporto){
+      accionBtn = `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-undo-contribute="${c.id}" title="Deshacer aporte">↩️</button>`;
+    } else {
+      accionBtn = `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-contribute="${c.id}" title="Aportar este mes">🐷</button>`;
+    }
+
+    return `<tr>
+      <td style="text-align:left;">${escapeHtml(c.name)}<div style="font-size:10.5px;color:var(--muted);margin-top:2px;">Provisión: ${formatCOP(provision)} c/${c.periodMonths}m</div></td>
+      <td>${formatCOP(total)}</td>
+      <td>${formatCOP(acumulado)}</td>
+      <td>${pct}%${completo?' 🎉':(yaAporto?' ✅':'')}</td>
+      <td>
+        ${accionBtn}
+        <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-edit="${key}" title="Editar">✏️</button>
+      </td>
+    </tr>`;
+  }).join('');
+  return `<div style="overflow-x:auto;">
+    <table class="amort-table">
+      <thead><tr><th>Nombre</th><th>Total</th><th>Acumulado</th><th>%</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
   </div>`;
 }
-
 
 // ---------- Interfaz Datos (exportar / importar) ----------
 const DATA_COLUMNS = ['Nombre','Área','Prioridad','Esfuerzo','Energía','Fecha','Estado','Proyecto','Observaciones','Fecha completada'];
@@ -3214,6 +3193,16 @@ function bindEvents(){
   });
   document.querySelectorAll('[data-gastos-registro-quitar]').forEach(b=>{
     b.onclick = ()=>onGastosRegistroQuitar(b.getAttribute('data-gastos-registro-quitar'));
+  });
+  document.querySelectorAll('[data-tabla-registrar-open]').forEach(b=>{
+    b.onclick = ()=>{ gastosEditingId = 'tablareg:'+b.getAttribute('data-tabla-registrar-open'); render(); };
+  });
+  document.querySelectorAll('[data-tabla-provision-ver]').forEach(b=>{
+    b.onclick = ()=>{
+      const id = b.getAttribute('data-tabla-provision-ver');
+      gastosEditingId = (gastosEditingId === 'provview:'+id) ? null : 'provview:'+id;
+      render();
+    };
   });
   document.querySelectorAll('[data-gastos-provision-open]').forEach(b=>{
     b.onclick = ()=>{ gastosEditingId = 'provquick:'+b.getAttribute('data-gastos-provision-open'); render(); };
