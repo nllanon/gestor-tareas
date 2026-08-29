@@ -8,6 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --bg:#f7f7f5;
@@ -315,61 +316,65 @@ let pendingImportText = '';
 let importConfirmPending = false;
 let importWarnings = [];
 
+// ======================================================
+// CONFIGURACIÓN DE SUPABASE — ya configurado para TareasNico
+// ======================================================
+const SUPABASE_URL = 'https://wfzmpdcxyuskfyjnwmme.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_KGfozOeJvj6vJBzHOTnWVg_wezXkWsH';
+const supabaseClient = (SUPABASE_URL.startsWith('http'))
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+async function kvGet(key){
+  if(!supabaseClient) return null;
+  const { data, error } = await supabaseClient.from('kv_store').select('value').eq('key',key).maybeSingle();
+  if(error) throw error;
+  return data ? data.value : null;
+}
+async function kvSet(key, value){
+  if(!supabaseClient) return;
+  const { error } = await supabaseClient.from('kv_store').upsert({ key, value });
+  if(error) throw error;
+}
+
 async function loadData(){
+  if(!supabaseClient){
+    alert('Falta configurar Supabase: edita SUPABASE_URL y SUPABASE_ANON_KEY en el código.');
+    tasks = []; projects = [];
+    gastosIngresos = []; gastosFijos = []; gastosCiclicos = []; gastosExtraordinarios = []; gastosEspera = []; gastosPrestamos = []; gastosMetas = [];
+    gastosSaldoInicial = {}; gastosMesesCerrados = {};
+    return;
+  }
+  try{ tasks = (await kvGet('tasks')) || []; }catch(e){ console.error('Error cargando tareas', e); tasks = []; }
+  try{ projects = (await kvGet('projects')) || []; }catch(e){ console.error('Error cargando proyectos', e); projects = []; }
+  try{ gastosIngresos = (await kvGet('gastos_ingresos')) || []; }catch(e){ console.error('Error cargando gastos_ingresos', e); gastosIngresos = []; }
+  try{ gastosFijos = (await kvGet('gastos_fijos')) || []; }catch(e){ console.error('Error cargando gastos_fijos', e); gastosFijos = []; }
+  try{ gastosCiclicos = (await kvGet('gastos_ciclicos')) || []; }catch(e){ console.error('Error cargando gastos_ciclicos', e); gastosCiclicos = []; }
+  try{ gastosExtraordinarios = (await kvGet('gastos_extraordinarios')) || []; }catch(e){ console.error('Error cargando gastos_extraordinarios', e); gastosExtraordinarios = []; }
+  try{ gastosEspera = (await kvGet('gastos_espera')) || []; }catch(e){ console.error('Error cargando gastos_espera', e); gastosEspera = []; }
+  try{ gastosPrestamos = (await kvGet('gastos_prestamos')) || []; }catch(e){ console.error('Error cargando gastos_prestamos', e); gastosPrestamos = []; }
+  try{ gastosMetas = (await kvGet('gastos_metas')) || []; }catch(e){ console.error('Error cargando gastos_metas', e); gastosMetas = []; }
   try{
-    const t = await window.storage.get('tasks');
-    tasks = t ? JSON.parse(t.value) : [];
-  }catch(e){ tasks = []; }
-  try{
-    const p = await window.storage.get('projects');
-    projects = p ? JSON.parse(p.value) : [];
-  }catch(e){ projects = []; }
-  try{
-    const g = await window.storage.get('gastos_ingresos');
-    gastosIngresos = g ? JSON.parse(g.value) : [];
-  }catch(e){ gastosIngresos = []; }
-  try{
-    const g = await window.storage.get('gastos_fijos');
-    gastosFijos = g ? JSON.parse(g.value) : [];
-  }catch(e){ gastosFijos = []; }
-  try{
-    const g = await window.storage.get('gastos_ciclicos');
-    gastosCiclicos = g ? JSON.parse(g.value) : [];
-  }catch(e){ gastosCiclicos = []; }
-  try{
-    const g = await window.storage.get('gastos_extraordinarios');
-    gastosExtraordinarios = g ? JSON.parse(g.value) : [];
-  }catch(e){ gastosExtraordinarios = []; }
-  try{
-    const g = await window.storage.get('gastos_espera');
-    gastosEspera = g ? JSON.parse(g.value) : [];
-  }catch(e){ gastosEspera = []; }
-  try{
-    const g = await window.storage.get('gastos_prestamos');
-    gastosPrestamos = g ? JSON.parse(g.value) : [];
-  }catch(e){ gastosPrestamos = []; }
-  try{
-    const g = await window.storage.get('gastos_metas');
-    gastosMetas = g ? JSON.parse(g.value) : [];
-  }catch(e){ gastosMetas = []; }
-  try{
-    const g = await window.storage.get('gastos_saldo');
-    const parsed = g ? JSON.parse(g.value) : null;
+    const parsed = await kvGet('gastos_saldo');
     gastosSaldoInicial = parsed ? (parsed.inicial||{}) : {};
     gastosMesesCerrados = parsed ? (parsed.cerrados||{}) : {};
-  }catch(e){ gastosSaldoInicial = {}; gastosMesesCerrados = {}; }
+  }catch(e){ console.error('Error cargando gastos_saldo', e); gastosSaldoInicial = {}; gastosMesesCerrados = {}; }
 }
 async function saveTasks(){
-  try{ await window.storage.set('tasks', JSON.stringify(tasks)); }
+  try{ await kvSet('tasks', tasks); }
   catch(e){ console.error('Error guardando tareas', e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
 async function saveProjects(){
-  try{ await window.storage.set('projects', JSON.stringify(projects)); }
+  try{ await kvSet('projects', projects); }
   catch(e){ console.error('Error guardando proyectos', e); }
 }
 async function saveGastosSaldo(){
-  try{ await window.storage.set('gastos_saldo', JSON.stringify({ inicial: gastosSaldoInicial, cerrados: gastosMesesCerrados })); }
+  try{ await kvSet('gastos_saldo', { inicial: gastosSaldoInicial, cerrados: gastosMesesCerrados }); }
   catch(e){ console.error('Error guardando saldo', e); alert('No se pudo guardar. Intenta de nuevo.'); }
+}
+async function saveGastosMetas(){
+  try{ await kvSet('gastos_metas', gastosMetas); }
+  catch(e){ console.error('Error guardando metas', e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
 async function saveGastos(cat){
   const map = {
@@ -381,7 +386,7 @@ async function saveGastos(cat){
     prestamos: gastosPrestamos,
     metas: gastosMetas,
   };
-  try{ await window.storage.set('gastos_'+cat, JSON.stringify(map[cat])); }
+  try{ await kvSet('gastos_'+cat, map[cat]); }
   catch(e){ console.error('Error guardando gastos_'+cat, e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
 
@@ -1612,10 +1617,6 @@ async function onGastosAbonoDelete(key){
   render();
 }
 
-async function saveGastosMetas(){
-  try{ await window.storage.set('gastos_metas', JSON.stringify(gastosMetas)); }
-  catch(e){ console.error('Error guardando metas', e); alert('No se pudo guardar. Intenta de nuevo.'); }
-}
 async function onGastosAddMeta(){
   const name = (document.getElementById('gs_new_name_metas').value||'').trim();
   if(!name){ alert('Escribe un nombre.'); return; }
