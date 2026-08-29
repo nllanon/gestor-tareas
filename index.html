@@ -8,7 +8,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --bg:#f7f7f5;
@@ -34,7 +33,7 @@
   .app{max-width:1100px;margin:0 auto;padding:12px;}
   h1{font-size:17px;margin:0 0 10px 0;}
   h2{font-size:15px;margin:0 0 10px 0;color:var(--text);}
- 
+
   nav{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:14px;}
   nav button{
     padding:9px 6px;border:1px solid var(--border);background:var(--panel);
@@ -45,16 +44,16 @@
   @media (max-width:480px){
     nav button{font-size:10.5px;padding:8px 4px;}
   }
- 
+
   .notif-badge{
     position:absolute;top:-6px;right:-6px;background:#ff3b30;color:#fff;
     border-radius:999px;min-width:18px;height:18px;padding:0 4px;
     font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;
     line-height:1;box-shadow:0 0 0 2px var(--bg);
   }
- 
+
   .panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px;}
- 
+
   label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px;margin-top:8px;}
   input[type=text],input[type=date],select,textarea{
     width:100%;padding:9px 8px;border:1px solid var(--border);border-radius:6px;
@@ -65,7 +64,7 @@
   .row > div{flex:1;min-width:140px;}
   .field-with-btn{display:flex;gap:6px;align-items:flex-end;}
   .field-with-btn > div{flex:1;}
- 
+
   button.primary,button.secondary,button.danger{
     min-height:40px;padding:0 14px;border-radius:6px;cursor:pointer;
     font-size:13px;font-weight:600;line-height:1;box-sizing:border-box;
@@ -78,7 +77,7 @@
   @media (max-width:480px){
     .task-actions button{min-width:0;flex:1 1 45%;}
   }
- 
+
   .icon-actions{display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0;}
   .icon-btn{
     width:34px;height:34px;padding:0;border:1px solid var(--border);background:var(--panel);
@@ -90,7 +89,7 @@
   @media (max-width:480px){
     .icon-btn{font-size:11.5px;width:32px;height:32px;}
   }
- 
+
   .task-card{
     border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px;background:#fdfdfc;
   }
@@ -108,9 +107,9 @@
   .task-card.status-sin-iniciar{border-left:3px solid #4285F4;}
   .task-card.status-ejecucion{border-left:3px solid #FBBC05;}
   .task-card.status-pendiente{border-left:3px solid #7c3aed;}
- 
+
   .empty{color:var(--muted);font-size:12.5px;padding:10px 0;}
- 
+
   .area-block{margin-bottom:22px;}
   .hoy-grid{display:grid;grid-template-columns:1fr;gap:16px;}
   @media (min-width:700px){ .hoy-grid{grid-template-columns:repeat(2,1fr);} }
@@ -119,14 +118,14 @@
   .area-title{font-size:15px;font-weight:700;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid var(--accent);}
   .section-title{font-size:12px;font-weight:700;margin:14px 0 6px 0;color:#fff;background:var(--accent);display:inline-block;padding:2px 8px;border-radius:4px;}
   .cat-title{font-size:11.5px;color:var(--muted);margin:8px 0 4px 0;}
- 
+
   .edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;}
   .edit-grid label{margin-top:0;}
   .edit-grid .full{grid-column:1/-1;}
- 
+
   .status-msg{font-size:12px;color:var(--muted);margin-bottom:8px;}
   select.mini{padding:4px 6px;font-size:12px;}
- 
+
   .quick-add-row{display:flex;gap:8px;align-items:flex-end;}
   .quick-add-row textarea{flex:1;min-height:44px;max-height:160px;resize:vertical;}
   .send-btn{
@@ -135,14 +134,14 @@
     display:flex;align-items:center;justify-content:center;line-height:1;
   }
   .send-btn:active{opacity:.85;}
- 
+
   .combobox{position:relative;}
   .combobox input{padding-right:30px;background:#fff;}
   .combobox::after{
     content:"▾";position:absolute;right:10px;top:50%;transform:translateY(-50%);
     color:var(--muted);pointer-events:none;font-size:12px;
   }
- 
+
   .progress-track{background:#ece9e3;border-radius:6px;height:10px;overflow:hidden;margin-top:6px;}
   .progress-fill{background:var(--accent);height:100%;border-radius:6px;}
   .money-row{display:flex;justify-content:space-between;align-items:center;}
@@ -170,7 +169,7 @@
   <div id="content"></div>
   <div id="modal-root"></div>
 </div>
- 
+
 <script>
 const AREAS = ['Personales','UTadeo','CDTIC','CNA'];
 const AREA_LABEL = {Personales:'Personales', UTadeo:'UTadeo', CDTIC:'Alcaldía (CDTIC)', CNA:'CNA'};
@@ -178,7 +177,7 @@ const PRIORITIES = ['Alta','Media','Baja'];
 const EFFORTS = ['Alto','Medio','Bajo'];
 const ENERGIES = ['Alta','Baja'];
 const STATUSES = ['Por organizar','Sin iniciar','En ejecución','Pendiente','Terminada'];
- 
+
 const CATEGORY_MAP = {
   'Alta|Bajo|Alta':   {section:'HOY - HACERLAS YA', order:1},
   'Alta|Bajo|Baja':   {section:'HOY - HACERLAS YA', order:2},
@@ -200,7 +199,7 @@ const CATEGORY_MAP = {
   'Baja|Bajo|Baja':   {section:'EN CAMINO', order:18},
 };
 const SECTION_ORDER = ['HOY - HACERLAS YA','HOY - DURANTE EL DÍA','PROGRAMAR','EN ESPERA','EN CAMINO'];
- 
+
 function getCategory(p,e,en){
   if(!p||!e||!en) return null;
   return CATEGORY_MAP[p+'|'+e+'|'+en] || null;
@@ -220,7 +219,7 @@ function setToday(inputId){
   if(el) el.value = todayStr();
 }
 window.setToday = setToday;
- 
+
 const SECTION_DEFAULTS = {
   'HOY - HACERLAS YA': {priority:'Alta', effort:'Bajo', energy:'Alta'},
   'HOY - DURANTE EL DÍA': {priority:'Alta', effort:'Alto', energy:'Alta'},
@@ -242,7 +241,7 @@ window.applySectionDefault = applySectionDefault;
 function blankTask(){
   return {id:null, name:'', area:null, date:null, priority:null, effort:null, energy:null, project:null, notes:'', status:'Por organizar', completedDate:null, createdAt:null};
 }
- 
+
 const ICONS = {
   edit: '✏️',
   check: '✅',
@@ -256,7 +255,7 @@ const ICONS = {
 function iconAction(cls, icon, label, dataAttr){
   return `<button type="button" class="icon-btn" ${dataAttr} title="${label}" aria-label="${label}">${ICONS[icon]}</button>`;
 }
- 
+
 let tasks = [];
 let projects = [];
 let currentTab = 'crear';
@@ -269,7 +268,7 @@ let editingProjectId = null;
 let pendingProjectDeleteId = null;
 let expandedSection = null;
 let viewingTaskId = null;
- 
+
 // ---------- Estado del módulo Gastos ----------
 let gastosIngresos = [];
 let gastosFijos = [];
@@ -289,7 +288,7 @@ let gastosEditingId = null;
 let gastosPendingDeleteId = null;
 let gastosSaldoInicial = {};
 let gastosMesesCerrados = {};
- 
+
 function monthStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 function currentMonthStr(){ return monthStr(new Date()); }
 function addMonths(ym, delta){
@@ -315,66 +314,62 @@ function addMonthsToDate(dateStr, months){
 let pendingImportText = '';
 let importConfirmPending = false;
 let importWarnings = [];
- 
-// ======================================================
-// CONFIGURACIÓN DE SUPABASE — ya configurado para TareasNico
-// ======================================================
-const SUPABASE_URL = 'https://wfzmpdcxyuskfyjnwmme.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_KGfozOeJvj6vJBzHOTnWVg_wezXkWsH';
-const supabaseClient = (SUPABASE_URL.startsWith('http'))
-  ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : null;
- 
-async function kvGet(key){
-  if(!supabaseClient) return null;
-  const { data, error } = await supabaseClient.from('kv_store').select('value').eq('key',key).maybeSingle();
-  if(error) throw error;
-  return data ? data.value : null;
-}
-async function kvSet(key, value){
-  if(!supabaseClient) return;
-  const { error } = await supabaseClient.from('kv_store').upsert({ key, value });
-  if(error) throw error;
-}
- 
+
 async function loadData(){
-  if(!supabaseClient){
-    alert('Falta configurar Supabase: edita SUPABASE_URL y SUPABASE_ANON_KEY en el código.');
-    tasks = []; projects = [];
-    gastosIngresos = []; gastosFijos = []; gastosCiclicos = []; gastosExtraordinarios = []; gastosEspera = []; gastosPrestamos = []; gastosMetas = [];
-    gastosSaldoInicial = {}; gastosMesesCerrados = {};
-    return;
-  }
-  try{ tasks = (await kvGet('tasks')) || []; }catch(e){ console.error('Error cargando tareas', e); tasks = []; }
-  try{ projects = (await kvGet('projects')) || []; }catch(e){ console.error('Error cargando proyectos', e); projects = []; }
-  try{ gastosIngresos = (await kvGet('gastos_ingresos')) || []; }catch(e){ console.error('Error cargando gastos_ingresos', e); gastosIngresos = []; }
-  try{ gastosFijos = (await kvGet('gastos_fijos')) || []; }catch(e){ console.error('Error cargando gastos_fijos', e); gastosFijos = []; }
-  try{ gastosCiclicos = (await kvGet('gastos_ciclicos')) || []; }catch(e){ console.error('Error cargando gastos_ciclicos', e); gastosCiclicos = []; }
-  try{ gastosExtraordinarios = (await kvGet('gastos_extraordinarios')) || []; }catch(e){ console.error('Error cargando gastos_extraordinarios', e); gastosExtraordinarios = []; }
-  try{ gastosEspera = (await kvGet('gastos_espera')) || []; }catch(e){ console.error('Error cargando gastos_espera', e); gastosEspera = []; }
-  try{ gastosPrestamos = (await kvGet('gastos_prestamos')) || []; }catch(e){ console.error('Error cargando gastos_prestamos', e); gastosPrestamos = []; }
-  try{ gastosMetas = (await kvGet('gastos_metas')) || []; }catch(e){ console.error('Error cargando gastos_metas', e); gastosMetas = []; }
   try{
-    const parsed = await kvGet('gastos_saldo');
+    const t = await window.storage.get('tasks');
+    tasks = t ? JSON.parse(t.value) : [];
+  }catch(e){ tasks = []; }
+  try{
+    const p = await window.storage.get('projects');
+    projects = p ? JSON.parse(p.value) : [];
+  }catch(e){ projects = []; }
+  try{
+    const g = await window.storage.get('gastos_ingresos');
+    gastosIngresos = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosIngresos = []; }
+  try{
+    const g = await window.storage.get('gastos_fijos');
+    gastosFijos = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosFijos = []; }
+  try{
+    const g = await window.storage.get('gastos_ciclicos');
+    gastosCiclicos = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosCiclicos = []; }
+  try{
+    const g = await window.storage.get('gastos_extraordinarios');
+    gastosExtraordinarios = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosExtraordinarios = []; }
+  try{
+    const g = await window.storage.get('gastos_espera');
+    gastosEspera = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosEspera = []; }
+  try{
+    const g = await window.storage.get('gastos_prestamos');
+    gastosPrestamos = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosPrestamos = []; }
+  try{
+    const g = await window.storage.get('gastos_metas');
+    gastosMetas = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosMetas = []; }
+  try{
+    const g = await window.storage.get('gastos_saldo');
+    const parsed = g ? JSON.parse(g.value) : null;
     gastosSaldoInicial = parsed ? (parsed.inicial||{}) : {};
     gastosMesesCerrados = parsed ? (parsed.cerrados||{}) : {};
-  }catch(e){ console.error('Error cargando gastos_saldo', e); gastosSaldoInicial = {}; gastosMesesCerrados = {}; }
+  }catch(e){ gastosSaldoInicial = {}; gastosMesesCerrados = {}; }
 }
 async function saveTasks(){
-  try{ await kvSet('tasks', tasks); }
+  try{ await window.storage.set('tasks', JSON.stringify(tasks)); }
   catch(e){ console.error('Error guardando tareas', e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
 async function saveProjects(){
-  try{ await kvSet('projects', projects); }
+  try{ await window.storage.set('projects', JSON.stringify(projects)); }
   catch(e){ console.error('Error guardando proyectos', e); }
 }
 async function saveGastosSaldo(){
-  try{ await kvSet('gastos_saldo', { inicial: gastosSaldoInicial, cerrados: gastosMesesCerrados }); }
+  try{ await window.storage.set('gastos_saldo', JSON.stringify({ inicial: gastosSaldoInicial, cerrados: gastosMesesCerrados })); }
   catch(e){ console.error('Error guardando saldo', e); alert('No se pudo guardar. Intenta de nuevo.'); }
-}
-async function saveGastosMetas(){
-  try{ await kvSet('gastos_metas', gastosMetas); }
-  catch(e){ console.error('Error guardando metas', e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
 async function saveGastos(cat){
   const map = {
@@ -386,10 +381,10 @@ async function saveGastos(cat){
     prestamos: gastosPrestamos,
     metas: gastosMetas,
   };
-  try{ await kvSet('gastos_'+cat, map[cat]); }
+  try{ await window.storage.set('gastos_'+cat, JSON.stringify(map[cat])); }
   catch(e){ console.error('Error guardando gastos_'+cat, e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
- 
+
 function reprogramOverdue(){
   const today = todayStr();
   let changed = false;
@@ -401,7 +396,7 @@ function reprogramOverdue(){
   });
   return changed;
 }
- 
+
 function getOrCreateProject(name, area){
   name = name.trim();
   if(!name) return null;
@@ -414,7 +409,7 @@ function getOrCreateProject(name, area){
 function projectsByArea(area){
   return projects.filter(p=>p.area===area).sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'}));
 }
- 
+
 // ---------- Tabs ----------
 function renderTabs(){
   const nav = document.getElementById('tabs');
@@ -424,7 +419,7 @@ function renderTabs(){
     navSec.innerHTML = '';
     return;
   }
- 
+
   let primary, secondary;
   if(homeSection==='tareas'){
     primary = [
@@ -453,20 +448,21 @@ function renderTabs(){
       ['g-prestamos','🤝 Lo que me deben'],
       ['g-metas','🎯 Metas'],
       ['g-historial','📜 Historial'],
+      ['g-datos','⚙️ Datos'],
     ];
   }
   const pendCount = tasks.filter(t=>t.status==='Por organizar').length;
- 
+
   nav.innerHTML = '';
   navSec.innerHTML = '';
- 
+
   const homeBtn = document.createElement('button');
   homeBtn.textContent = '🏠 Inicio';
   homeBtn.title = 'Inicio';
   homeBtn.setAttribute('aria-label','Inicio');
   homeBtn.onclick = ()=>{ homeSection=null; render(); };
   nav.appendChild(homeBtn);
- 
+
   const allTabs = primary.concat(secondary);
   allTabs.forEach(([key,label])=>{
     const b = document.createElement('button');
@@ -482,7 +478,7 @@ function renderTabs(){
     nav.appendChild(b);
   });
 }
- 
+
 function viewHome(){
   return `
   <div class="panel" style="text-align:center;padding:36px 16px;">
@@ -491,7 +487,7 @@ function viewHome(){
     <button type="button" class="primary" data-home-select="gastos" style="width:100%;padding:18px;font-size:16px;">💰 Gastos</button>
   </div>`;
 }
- 
+
 function render(){
   renderTabs();
   const c = document.getElementById('content');
@@ -516,18 +512,19 @@ function render(){
     else if(currentTab==='g-prestamos') c.innerHTML = viewGastosPrestamos();
     else if(currentTab==='g-metas') c.innerHTML = viewGastosMetas();
     else if(currentTab==='g-historial') c.innerHTML = viewGastosHistorial();
+    else if(currentTab==='g-datos') c.innerHTML = viewGastosDatos();
   }
   bindEvents();
   updateModal();
   if(homeSection==='gastos' && currentTab==='g-resumen') renderGastosCharts();
 }
- 
+
 function updateModal(){
   const root = document.getElementById('modal-root');
   if(root) root.innerHTML = renderAmortModal();
   bindModalEvents();
 }
- 
+
 function renderAmortModal(){
   if(!gastosAmortModalId) return '';
   const item = gastosListFor(gastosAmortModalCat).find(x=>x.id===gastosAmortModalId);
@@ -584,7 +581,7 @@ function renderAmortModal(){
     </div>
   </div>`;
 }
- 
+
 function bindModalEvents(){
   document.querySelectorAll('[data-modal-close]').forEach(b=>{
     b.onclick = ()=>{ gastosAmortModalId = null; updateModal(); };
@@ -603,7 +600,7 @@ function bindModalEvents(){
     b.onclick = ()=>onDescargarAmortizacionPDF(b.getAttribute('data-descargar-amort'), b.getAttribute('data-descargar-amort-cat') || 'espera');
   });
 }
- 
+
 function onDescargarAmortizacionPDF(id, cat){
   const item = gastosListFor(cat||'espera').find(x=>x.id===id);
   if(!item) return;
@@ -614,14 +611,14 @@ function onDescargarAmortizacionPDF(id, cat){
   const amort = calcularAmortizacion(item);
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
- 
+
   doc.setFontSize(16);
   doc.text('Tabla de amortización', 14, 18);
   doc.setFontSize(10);
   doc.setTextColor(120);
   doc.text(`${item.name}  ·  Capital inicial: ${formatCOP(item.amount)}  ·  Tasa: ${item.tasaMensual||0}% mensual  ·  Inicio: ${item.date}`, 14, 25);
   doc.setTextColor(0);
- 
+
   const head = [['Mes','Interés del mes','Abono','A interés','A capital','Saldo capital','Saldo interés','Saldo total']];
   const body = amort.rows.map(row=>[
     monthLabel(row.mes),
@@ -645,7 +642,7 @@ function onDescargarAmortizacionPDF(id, cat){
       '$0 — saldada',
     ]);
   }
- 
+
   doc.autoTable({
     head, body, startY: 32,
     styles: { fontSize: 7.5, cellPadding: 2.5 },
@@ -658,17 +655,17 @@ function onDescargarAmortizacionPDF(id, cat){
       }
     },
   });
- 
+
   const finalY = doc.lastAutoTable.finalY + 10;
   doc.setFontSize(11);
   doc.text(`Capital pendiente: ${formatCOP(amort.saldoCapital)}`, 14, finalY);
   doc.text(`Interés pendiente: ${formatCOP(amort.saldoInteres)}`, 14, finalY+7);
   doc.setFont(undefined, 'bold');
   doc.text(`Total a pagar hoy: ${formatCOP(amort.saldoTotal)}`, 14, finalY+16);
- 
+
   doc.save('amortizacion_'+item.name.replace(/[^a-z0-9]/gi,'_')+'.pdf');
 }
- 
+
 // ---------- Botones de eliminar con confirmación en página ----------
 function deleteButtonsHtml(id){
   if(pendingDeleteId === id){
@@ -676,7 +673,7 @@ function deleteButtonsHtml(id){
   }
   return iconAction('delete','trash','Eliminar', `data-delete-matrix="${id}"`);
 }
- 
+
 // ---------- Interfaz Crear ----------
 function viewCrear(){
   return `
@@ -692,11 +689,11 @@ function viewCrear(){
     `).join('')}
   </div>`;
 }
- 
+
 // ---------- Interfaz Organizar ----------
 function viewOrganizar(){
   const pend = tasks.filter(t=>t.status==='Por organizar').sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
- 
+
   if(editingTaskId === '__new__'){
     return viewOrganizarDetalle(blankTask(), true);
   }
@@ -704,7 +701,7 @@ function viewOrganizar(){
     const t = tasks.find(x=>x.id===editingTaskId);
     if(t) return viewOrganizarDetalle(t, false);
   }
- 
+
   return `
   <div class="panel">
     <button class="primary" data-new-organize="1" style="width:100%;">+ Crear tarea completa</button>
@@ -790,7 +787,7 @@ function viewOrganizarDetalle(t, isNew){
     </div>
   </div>`;
 }
- 
+
 // ---------- Interfaz HOY ----------
 function viewHoy(){
   const today = todayStr();
@@ -802,13 +799,13 @@ function viewHoy(){
     if(areaTasks.length===0) return;
     anyToday = true;
     grid += `<div class="area-block"><div class="area-title">${AREA_LABEL[area]}</div>`;
- 
+
     const uncategorized = areaTasks.filter(t=>!getCategory(t.priority,t.effort,t.energy));
     if(uncategorized.length){
       grid += `<div class="cat-title">Sin categorizar (falta prioridad, esfuerzo o energía)</div>`;
       grid += renderTaskList(sortTasks(uncategorized), false, true, false, true);
     }
- 
+
     SECTION_ORDER.forEach(section=>{
       const catsInSection = Object.entries(CATEGORY_MAP).filter(([k,v])=>v.section===section).sort((a,b)=>a[1].order-b[1].order);
       let sectionTasksTotal = [];
@@ -832,20 +829,20 @@ function viewHoy(){
   else html += `<div class="hoy-grid">${grid}</div>`;
   return html;
 }
- 
+
 // ---------- Interfaz Tareas por tema (matriz por área) ----------
 function viewMatrizArea(){
   let html = `<div class="panel"><h2>Tareas por tema</h2><div class="status-msg">En cada categoría: primero tareas "En ejecución", luego "Sin iniciar" — ordenadas por fecha más próxima primero.</div></div>`;
   AREAS.forEach(area=>{
     const areaTasks = tasks.filter(t=>t.area===area && (t.status==='Sin iniciar'||t.status==='En ejecución'||t.status==='Pendiente'));
     html += `<div class="area-block"><div class="area-title">${AREA_LABEL[area]}</div>`;
- 
+
     const uncategorized = areaTasks.filter(t=>!getCategory(t.priority,t.effort,t.energy));
     if(uncategorized.length){
       html += `<div class="cat-title">Sin categorizar (falta prioridad, esfuerzo o energía)</div>`;
       html += renderTaskList(sortTasks(uncategorized));
     }
- 
+
     SECTION_ORDER.forEach(section=>{
       const catsInSection = Object.entries(CATEGORY_MAP).filter(([k,v])=>v.section===section).sort((a,b)=>a[1].order-b[1].order);
       let sectionTasksTotal = [];
@@ -872,18 +869,18 @@ function viewMatrizArea(){
   });
   return html;
 }
- 
+
 // ---------- Interfaz Todas las tareas (matriz general) ----------
 function viewMatrizGeneral(){
   let html = `<div class="panel"><h2>Todas las tareas</h2><div class="status-msg">Todas las áreas juntas, en las mismas categorías, ordenadas solo por fecha (más próxima primero).</div></div>`;
   const allTasks = tasks.filter(t=>t.status==='Sin iniciar'||t.status==='En ejecución'||t.status==='Pendiente');
- 
+
   const uncategorized = allTasks.filter(t=>!getCategory(t.priority,t.effort,t.energy));
   if(uncategorized.length){
     html += `<div class="cat-title">Sin categorizar (falta prioridad, esfuerzo o energía)</div>`;
     html += renderTaskList(sortByDateOnly(uncategorized), true);
   }
- 
+
   SECTION_ORDER.forEach(section=>{
     const catsInSection = Object.entries(CATEGORY_MAP).filter(([k,v])=>v.section===section).sort((a,b)=>a[1].order-b[1].order);
     let sectionTasksTotal = [];
@@ -1030,7 +1027,7 @@ function renderTaskEditCard(t){
     </div>
   </div>`;
 }
- 
+
 // ---------- Interfaz ¡Lo hice! (completadas) ----------
 function viewCompletadas(){
   const filter = matrixAreaFilter;
@@ -1057,7 +1054,7 @@ function viewCompletadas(){
   });
   return html;
 }
- 
+
 // ---------- Interfaz Proyectos ----------
 function viewProyectos(){
   let html = `<div class="panel"><h2>Proyectos</h2><div class="status-msg">Toca un proyecto para ver y editar sus actividades.</div></div>`;
@@ -1072,7 +1069,7 @@ function viewProyectos(){
         const isOpen = expandedProjectId===p.id;
         const isEditing = editingProjectId===p.id;
         const isConfirmingDelete = pendingProjectDeleteId===p.id;
- 
+
         let headerActions;
         if(isEditing){
           headerActions = iconAction('save','save','Guardar', `data-save-project="${p.id}"`) + iconAction('cancel','x','Cancelar', `data-cancel-edit-project="1"`);
@@ -1085,7 +1082,7 @@ function viewProyectos(){
           }
           headerActions += iconAction('list','list', isOpen?'Ocultar':'Actividades', `data-toggle-project="${p.id}"`);
         }
- 
+
         html += `<div class="task-card">
           <div class="task-top">
             <div style="flex:1;">
@@ -1110,10 +1107,10 @@ function viewProyectos(){
     }
     html += `</div>`;
   });
- 
+
   return html;
 }
- 
+
 // ---------- Interfaz Gastos ----------
 function renderMonthNav(){
   return `
@@ -1123,7 +1120,7 @@ function renderMonthNav(){
     <button type="button" class="icon-btn" data-month-next="1" title="Mes siguiente" aria-label="Mes siguiente">▶</button>
   </div>`;
 }
- 
+
 function ultimosMeses(n){
   const meses = [];
   let m = gastosViewMonth;
@@ -1162,13 +1159,13 @@ function viewGastosResumen(){
     esperaVencidos, prestamosDelMes, saldoInicial } = s;
   const prestamosPendientes = gastosPrestamos.filter(p=>deudaSaldoActual('prestamos', p) > 0);
   const mesCerrado = !!gastosMesesCerrados[gastosViewMonth];
- 
-  const ingresosPendientes = gastosIngresos.filter(i=>!(i.paidMonths && i.paidMonths[gastosViewMonth]));
-  const fijosPendientes = gastosFijos.filter(i=>!i.isProvision && !(i.paidMonths && i.paidMonths[gastosViewMonth]));
+
+  const ingresosPendientes = gastosIngresos.filter(i=>!estaRegistrado(i, gastosViewMonth));
+  const fijosPendientes = gastosFijos.filter(i=>!i.isProvision && !estaRegistrado(i, gastosViewMonth));
   const ciclicosPendientes = gastosCiclicos.filter(c=>!gastosMonthlyInfo('ciclicos',c,gastosViewMonth).confirmed);
- 
+
   let html = renderMonthNav();
- 
+
   const isEditingSaldo = gastosEditingId === 'saldo';
   html += `<div class="panel">
     <h2>Resumen — ${monthLabel(gastosViewMonth)}</h2>
@@ -1200,7 +1197,7 @@ function viewGastosResumen(){
     <div class="money-row"><span>Aportes a metas (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalAportesMetas)}</span></div>
     <div class="money-row total"><span>Dinero disponible</span><span class="${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</span></div>
   </div>`;
- 
+
   const pctIngresosDeuda = s.totalIngresos>0 ? Math.round((s.abonosDeudaDelMes/s.totalIngresos)*100) : 0;
   const tasaAhorro = s.totalIngresos>0 ? Math.round((((disponible>0?disponible:0) + s.aportesAhorrosDelMes + s.totalAportesMetas)/s.totalIngresos)*100) : 0;
   html += `<div class="panel">
@@ -1216,7 +1213,7 @@ function viewGastosResumen(){
     </div>
     <div class="task-meta">Incluye lo que te sobró, más lo que aportaste a Ahorros y Metas, sobre tus ingresos totales.</div>
   </div>`;
- 
+
   const historico = ultimosMeses(6);
   html += `<div class="panel">
     <h2>📈 Tendencias (últimos ${historico.length} meses)</h2>
@@ -1227,12 +1224,12 @@ function viewGastosResumen(){
     <div class="status-msg" style="margin-top:16px;">Distribución del gasto — ${monthLabel(gastosViewMonth)}</div>
     <canvas id="chart-distribucion" height="200"></canvas>
   </div>`;
- 
+
   html += `<div class="panel">
     ${mesCerrado ? `<div class="status-msg">✅ Este mes está cerrado. Su disponible ya pasó como saldo inicial de ${monthLabel(addMonths(gastosViewMonth,1))}.</div>` : `<div class="status-msg">Cuando termines de revisar este mes, ciérralo para pasar el disponible como saldo inicial de ${monthLabel(addMonths(gastosViewMonth,1))}. No pasa nada solo, tienes que cerrarlo tú.</div>`}
     <button type="button" class="${mesCerrado?'secondary':'primary'}" data-gastos-cerrar-mes="1" style="width:100%;">${mesCerrado?'🔒 Volver a cerrar (recalcular)':'🔒 Cerrar '+monthLabel(gastosViewMonth)}</button>
   </div>`;
- 
+
   if(fijosPendientes.length || ciclicosPendientes.length || extraordinariosMes.length || esperaVencidos.length){
     let totalPendientePagar = 0;
     let filasPagar = '';
@@ -1276,7 +1273,7 @@ function viewGastosResumen(){
       <div class="money-row total"><span>Total pendiente</span><span class="money-positive">${formatCOP(totalPendienteCobrar)}</span></div>
       ${filasCobrar}</div>`;
   }
- 
+
   if(extraordinariosMes.length){
     html += `<div class="panel"><h2>Imprevistos de ${monthLabel(gastosViewMonth)}</h2>`;
     extraordinariosMes.forEach(e=>{
@@ -1293,7 +1290,7 @@ function viewGastosResumen(){
   }
   return html;
 }
- 
+
 // ---------- Reconciliación plan vs. real por mes ----------
 function gastosProvisionSpent(item, month){
   const txs = (item.transactions && item.transactions[month]) || [];
@@ -1305,7 +1302,7 @@ function renderGastosProvisionManage(item){
   const isEditing = gastosEditingId===key;
   const isConfirmingDelete = gastosPendingDeleteId===key;
   const isAdding = gastosEditingId === ('provquick:'+item.id);
- 
+
   if(isEditing){
     return `<div class="task-card">
       <label>Nombre</label>
@@ -1318,17 +1315,17 @@ function renderGastosProvisionManage(item){
       </div>
     </div>`;
   }
- 
+
   const plan = Number(item.amount||0);
   const spent = gastosProvisionSpent(item, month);
   const remaining = plan - spent;
   const pct = plan>0 ? Math.min(100, Math.round((spent/plan)*100)) : 0;
   const txs = (item.transactions && item.transactions[month]) || [];
- 
+
   let headerActions = isConfirmingDelete
     ? iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`)
     : iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`) + iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
- 
+
   const txListHtml = txs.length ? txs.map(t=>`
     <div class="task-card" style="padding:8px 10px;">
       <div class="task-top">
@@ -1339,7 +1336,7 @@ function renderGastosProvisionManage(item){
         </div>
       </div>
     </div>`).join('') : `<div class="empty">Sin gastos registrados en ${monthLabel(month)}.</div>`;
- 
+
   const addFormHtml = isAdding ? `
     <div style="margin-top:8px;">
       <label>Asunto</label>
@@ -1351,7 +1348,7 @@ function renderGastosProvisionManage(item){
         ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
       </div>
     </div>` : `<button type="button" class="secondary" data-gastos-provision-open="${item.id}" style="width:100%;margin-top:8px;">➤ Registrar gasto</button>`;
- 
+
   return `<div class="task-card">
     <div class="task-top">
       <div style="flex:1;">
@@ -1373,7 +1370,7 @@ function renderGastosProvisionRow(item){
   const spent = gastosProvisionSpent(item, month);
   const remaining = plan - spent;
   const pct = plan>0 ? Math.min(100, Math.round((spent/plan)*100)) : 0;
- 
+
   const addFormHtml = isAdding ? `
     <div style="margin-top:8px;">
       <input type="text" id="gs_prov_desc_${item.id}" value="${escapeAttr(item.name)}" style="margin-bottom:6px;">
@@ -1383,7 +1380,7 @@ function renderGastosProvisionRow(item){
         ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
       </div>
     </div>` : `<div class="icon-actions" style="margin-top:8px;">${iconAction('edit','edit','Registrar gasto', `data-gastos-provision-open="${item.id}"`)}</div>`;
- 
+
   return `<div class="task-card">
     <div class="task-top">
       <div style="flex:1;">
@@ -1397,25 +1394,30 @@ function renderGastosProvisionRow(item){
   </div>`;
 }
 function renderGastosPendingRow(name, amount, action, done){
-  const checkHtml = action ? `<button type="button" class="icon-btn" data-gastos-quick-check="${action.type}:${action.id}:${action.month||''}" title="Marcar como pagado" aria-label="Marcar como pagado">⬜</button>` : '';
   return `<div class="task-card ${done?'status-terminada':'status-organizar'}">
     <div class="task-top">
       <div class="task-name">${escapeHtml(name)}</div>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <div class="task-name">${formatCOP(amount)}</div>
-        ${checkHtml}
-      </div>
+      <div class="task-name">${formatCOP(amount)}</div>
     </div>
   </div>`;
 }
 function excedenteAcumulado(item){
-  const overrides = item.overrides || {};
   const plan = Number(item.amount||0);
   let total = 0;
-  Object.keys(overrides).forEach(m=>{
-    total += plan - Number(overrides[m]||0);
+  const mesesVistos = new Set();
+  Object.keys(item.registros||{}).forEach(m=>{
+    total += plan - Number((item.registros[m]||{}).monto||0);
+    mesesVistos.add(m);
+  });
+  Object.keys(item.overrides||{}).forEach(m=>{
+    if(mesesVistos.has(m)) return;
+    total += plan - Number(item.overrides[m]||0);
   });
   return total;
+}
+function estaRegistrado(item, mes){
+  if(item.registros && item.registros[mes]) return true;
+  return !!(item.paidMonths && item.paidMonths[mes]);
 }
 function gastosMonthlyInfo(cat, item, month){
   if(cat==='ciclicos'){
@@ -1428,8 +1430,13 @@ function gastosMonthlyInfo(cat, item, month){
     return { plan, real: gastosProvisionSpent(item, month), confirmed: true };
   }
   const plan = Number(item.amount||0);
+  if(item.registros && item.registros[month]){
+    const r = item.registros[month];
+    return { plan, real: Number(r.monto), confirmed: true, fecha: r.fecha||null };
+  }
   const ov = (item.overrides && item.overrides[month]!==undefined) ? item.overrides[month] : null;
-  return { plan, real: ov!==null?ov:plan, confirmed: ov!==null };
+  const paidLegacy = !!(item.paidMonths && item.paidMonths[month]);
+  return { plan, real: ov!==null?ov:plan, confirmed: paidLegacy, fecha: null };
 }
 function gastosSetMonthly(cat, item, month, value){
   if(cat==='ciclicos'){
@@ -1520,7 +1527,7 @@ async function onGastosReconcileSave(key){
   await saveGastos(cat);
   render();
 }
- 
+
 async function onGastosInlineAmount(key, value){
   const [cat,id] = key.split(':');
   const item = gastosListFor(cat).find(x=>x.id===id);
@@ -1530,76 +1537,31 @@ async function onGastosInlineAmount(key, value){
   await saveGastos(cat);
   render();
 }
-async function onGastosTogglePaid(key){
-  const [cat,id] = key.split(':');
+async function onGastosRegistrarPago(key){
+  const [cat, id] = key.split(':');
   const item = gastosListFor(cat).find(x=>x.id===id);
   if(!item) return;
-  if(!item.paidMonths) item.paidMonths = {};
-  if(item.paidMonths[gastosViewMonth]) delete item.paidMonths[gastosViewMonth];
-  else item.paidMonths[gastosViewMonth] = true;
+  const fechaEl = document.getElementById('gs_reg_fecha_'+id);
+  const montoEl = document.getElementById('gs_reg_monto_'+id);
+  const fecha = (fechaEl && fechaEl.value) ? fechaEl.value : todayStr();
+  const monto = parseMoney(montoEl.value);
+  if(monto<=0){ alert('El monto debe ser mayor a cero.'); return; }
+  if(!item.registros) item.registros = {};
+  item.registros[gastosViewMonth] = { fecha, monto };
+  gastosEditingId = null;
   await saveGastos(cat);
   render();
 }
- 
-async function onGastosQuickCheck(key){
-  const [type, id, month] = key.split(':');
-  const mes = month || currentMonthStr();
- 
-  if(type==='ingreso'){
-    const item = gastosIngresos.find(x=>x.id===id);
-    if(!item) return;
-    if(!item.paidMonths) item.paidMonths = {};
-    item.paidMonths[mes] = true;
-    await saveGastos('ingresos');
- 
-  } else if(type==='fijo'){
-    const item = gastosFijos.find(x=>x.id===id);
-    if(!item) return;
-    if(!item.paidMonths) item.paidMonths = {};
-    item.paidMonths[mes] = true;
-    await saveGastos('fijos');
- 
-  } else if(type==='ciclico'){
-    const item = gastosCiclicos.find(x=>x.id===id);
-    if(!item) return;
-    if(!item.contributions) item.contributions = {};
-    if(item.contributions[mes] === undefined){
-      const provision = Number(item.totalAmount||0)/Math.max(1,Number(item.periodMonths||1));
-      item.contributions[mes] = provision;
-    }
-    await saveGastos('ciclicos');
- 
-  } else if(type==='imprevisto'){
-    const item = gastosExtraordinarios.find(x=>x.id===id);
-    if(!item) return;
-    item.status = 'Pagado';
-    await saveGastos('extraordinarios');
- 
-  } else if(type==='espera'){
-    const item = gastosEspera.find(x=>x.id===id);
-    if(!item) return;
-    const saldo = deudaSaldoActual('espera', item);
-    if(saldo>0){
-      if(!item.abonos) item.abonos = [];
-      item.abonos.push({ id:uid(), amount: saldo, date: todayStr() });
-    }
-    item.status = 'Pagado';
-    await saveGastos('espera');
- 
-  } else if(type==='prestamo'){
-    const item = gastosPrestamos.find(x=>x.id===id);
-    if(!item) return;
-    const saldo = esperaSaldo(item);
-    if(saldo>0){
-      if(!item.abonos) item.abonos = [];
-      item.abonos.push({ id:uid(), amount: saldo, date: todayStr() });
-    }
-    item.status = 'Pagado';
-    await saveGastos('prestamos');
-  }
+async function onGastosRegistroQuitar(key){
+  const [cat, id] = key.split(':');
+  const item = gastosListFor(cat).find(x=>x.id===id);
+  if(!item) return;
+  if(item.registros) delete item.registros[gastosViewMonth];
+  if(item.paidMonths) delete item.paidMonths[gastosViewMonth];
+  await saveGastos(cat);
   render();
 }
- 
+
 async function onGastosProvisionAdd(id){
   const item = gastosFijos.find(x=>x.id===id);
   if(!item) return;
@@ -1623,7 +1585,7 @@ async function onGastosProvisionDeleteTx(key){
   await saveGastos(cat);
   render();
 }
- 
+
 async function onGastosAbonoAdd(key){
   const [cat, id] = key.split(':');
   const item = gastosListFor(cat).find(x=>x.id===id);
@@ -1649,7 +1611,11 @@ async function onGastosAbonoDelete(key){
   await saveGastos(cat);
   render();
 }
- 
+
+async function saveGastosMetas(){
+  try{ await window.storage.set('gastos_metas', JSON.stringify(gastosMetas)); }
+  catch(e){ console.error('Error guardando metas', e); alert('No se pudo guardar. Intenta de nuevo.'); }
+}
 async function onGastosAddMeta(){
   const name = (document.getElementById('gs_new_name_metas').value||'').trim();
   if(!name){ alert('Escribe un nombre.'); return; }
@@ -1703,7 +1669,7 @@ async function onGastosMetaAporteDelete(key){
   await saveGastosMetas();
   render();
 }
- 
+
 async function onGastosSaveSaldo(){
   const val = parseMoney(document.getElementById('gs_saldo_input').value);
   gastosSaldoInicial[gastosViewMonth] = val;
@@ -1711,11 +1677,11 @@ async function onGastosSaveSaldo(){
   await saveGastosSaldo();
   render();
 }
- 
+
 async function onGastosCerrarMes(){
   const month = gastosViewMonth;
   const { disponible } = computeMonthSummary(month);
- 
+
   const nextMonth = addMonths(month, 1);
   gastosSaldoInicial[nextMonth] = disponible;
   gastosMesesCerrados[month] = true;
@@ -1723,7 +1689,7 @@ async function onGastosCerrarMes(){
   render();
   alert('Mes cerrado. '+formatCOP(disponible)+' quedó como saldo inicial de '+monthLabel(nextMonth)+'.');
 }
- 
+
 function viewGastosSimpleList(cat, list, title){
   const hasProvisions = cat==='fijos' && list.some(i=>i.isProvision);
   let html = renderMonthNav();
@@ -1775,7 +1741,8 @@ function renderGastosSimpleItem(cat, item){
     </div>`;
   }
   const info = gastosMonthlyInfo(cat, item, gastosViewMonth);
-  const paid = !!(item.paidMonths && item.paidMonths[gastosViewMonth]);
+  const registrado = estaRegistrado(item, gastosViewMonth);
+  const isRegistrando = gastosEditingId === ('registrar:'+cat+':'+item.id);
   const diff = info.real - info.plan;
   let varianceHtml = '';
   if(diff !== 0){
@@ -1798,53 +1765,66 @@ function renderGastosSimpleItem(cat, item){
   }
   const actions = isConfirmingDelete
     ? iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`)
-    : iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`)
-      + `<button type="button" class="icon-btn" data-gastos-toggle-paid="${key}" title="${paid?'Marcado — toca para desmarcar':(cat==='ingresos'?'Marcar recibido':'Marcar pagado')}" aria-label="Marcar pagado">${paid?'✅':'⬜'}</button>`
-      + iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
-  return `<div class="task-card ${paid?'status-terminada':''}">
+    : iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`) + iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
+
+  const registroFormHtml = isRegistrando ? `
+    <div style="margin-top:8px;">
+      <label>Fecha real</label>
+      <input type="date" id="gs_reg_fecha_${item.id}" value="${todayStr()}">
+      <label>Monto real</label>
+      <input type="text" id="gs_reg_monto_${item.id}" value="${info.plan}" inputmode="numeric">
+      <div class="icon-actions" style="margin-top:8px;">
+        ${iconAction('save','save','Guardar', `data-gastos-registrar-pago="${key}"`)}
+        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+      </div>
+    </div>` : '';
+
+  const registroInfoHtml = registrado
+    ? `<div class="task-meta" style="margin-top:2px;">✅ ${cat==='ingresos'?'Recibido':'Pagado'}${info.fecha?` el ${info.fecha}`:''} · <button type="button" class="icon-btn" style="width:auto;height:auto;padding:2px 6px;font-size:11px;" data-gastos-registrar-open="${key}">✏️ corregir</button> · <button type="button" class="icon-btn" style="width:auto;height:auto;padding:2px 6px;font-size:11px;" data-gastos-registro-quitar="${key}">↩️ quitar</button></div>`
+    : (isRegistrando ? '' : `<button type="button" class="secondary" data-gastos-registrar-open="${key}" style="width:100%;margin-top:8px;">📝 Registrar ${cat==='ingresos'?'cobro':'pago'}</button>`);
+
+  return `<div class="task-card ${registrado?'status-terminada':''}">
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
       <div style="flex:1;min-width:110px;">
         <div class="task-name">${escapeHtml(item.name)}</div>
-        <div class="task-meta">Presupuestado: ${formatCOP(info.plan)}${(cat==='fijos' && item.dueDay) ? ` · vence el ${item.dueDay}` : ''}</div>
-      </div>
-      <div style="text-align:right;">
-        <label style="margin:0 0 2px;text-align:right;">Real este mes</label>
-        <input type="text" inputmode="numeric" value="${info.real}" data-gastos-inline-amount="${cat}:${item.id}" style="width:120px;min-width:100px;">
+        <div class="task-meta">Planeado: ${formatCOP(info.plan)}${(item.dueDay) ? ` · día ${item.dueDay}` : ''}</div>
       </div>
     </div>
+    ${registrado ? `<div class="task-meta" style="margin-top:2px;">Real: ${formatCOP(info.real)}</div>` : ''}
     ${varianceHtml}
     ${excedenteHtml}
-    <div class="task-meta" style="margin-top:2px;">${paid?(cat==='ingresos'?'Recibido':'Pagado')+' este mes':'Pendiente este mes'}</div>
+    ${registroInfoHtml}
+    ${registroFormHtml}
     <div class="icon-actions" style="margin-top:8px;">${actions}</div>
   </div>`;
 }
- 
+
 function esperaAbonado(item){
   return (item.abonos||[]).reduce((s,a)=>s+Number(a.amount||0),0);
 }
 function esperaSaldo(item){
   return Number(item.amount||0) - esperaAbonado(item);
 }
- 
+
 // ---------- Motor de amortización (interés simple sobre capital pendiente) ----------
 function calcularAmortizacion(item){
   const capitalInicial = Number(item.amount||0);
   const tasa = Number(item.tasaMensual||0) / 100;
   const abonos = item.abonos || [];
- 
+
   if(!item.date){
     const abonado = esperaAbonado(item);
     const saldoCapital = Math.max(0, capitalInicial - abonado);
     return { rows: [], saldoCapital, saldoInteres: 0, saldoTotal: saldoCapital, sinFecha: true };
   }
- 
+
   const abonosPorMes = {};
   abonos.forEach(a=>{
     if(!a.date) return;
     const am = a.date.slice(0,7);
     abonosPorMes[am] = (abonosPorMes[am]||0) + Number(a.amount||0);
   });
- 
+
   const startMonth = item.date.slice(0,7);
   const endMonth = currentMonthStr();
   let capital = capitalInicial;
@@ -1869,7 +1849,7 @@ function calcularAmortizacion(item){
   const saldoCapitalFinal = capital;
   const saldoInteresFinal = interesAcum;
   const saldoTotalFinal = saldoCapitalFinal + saldoInteresFinal;
- 
+
   let cierre = null;
   if(saldoTotalFinal > 0){
     cierre = {
@@ -1879,17 +1859,17 @@ function calcularAmortizacion(item){
       interesQueSalda: saldoInteresFinal,
     };
   }
- 
+
   return { rows, saldoCapital:saldoCapitalFinal, saldoInteres:saldoInteresFinal, saldoTotal:saldoTotalFinal, sinFecha:false, cierre };
 }
 function deudaSaldoActual(cat, item){
   if(cat==='espera' || cat==='prestamos') return calcularAmortizacion(item).saldoTotal;
   return esperaSaldo(item);
 }
- 
+
 const LABELS_ESPERA = { montoLabel:'Monto total', abonadoLabel:'Abonado', accionLabel:'Registrar abono', icono:'💵' };
 const LABELS_PRESTAMOS = { montoLabel:'Monto prestado', abonadoLabel:'Cobrado', accionLabel:'Registrar cobro', icono:'💰' };
- 
+
 function viewGastosEspera(){
   let html = `<div class="panel">
     <h2>Lo que debo</h2>
@@ -1915,7 +1895,7 @@ function viewGastosEspera(){
   html += `</div>`;
   return html;
 }
- 
+
 function metaAportado(meta){
   return (meta.aportes||[]).reduce((s,a)=>s+Number(a.amount||0),0);
 }
@@ -1960,7 +1940,7 @@ function renderGastosMetaItem(meta){
   const isEditing = gastosEditingId===key;
   const isConfirmingDelete = gastosPendingDeleteId===key;
   const isAportando = gastosEditingId === ('aportemeta:'+meta.id);
- 
+
   if(isEditing){
     return `<div class="task-card">
       <label>Nombre</label>
@@ -1975,11 +1955,11 @@ function renderGastosMetaItem(meta){
       </div>
     </div>`;
   }
- 
+
   const info = metaRitmoInfo(meta);
   const completa = info.pct >= 100;
   const aportes = (meta.aportes||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
- 
+
   let actions;
   if(isConfirmingDelete){
     actions = iconAction('complete','check','Confirmar', `data-gastos-confirm-delete-meta="${meta.id}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`);
@@ -1988,7 +1968,7 @@ function renderGastosMetaItem(meta){
     if(!completa) actions += `<button type="button" class="icon-btn" title="Registrar aporte" aria-label="Registrar aporte" data-meta-aporte-open="${meta.id}">💰</button>`;
     actions += `<button type="button" class="icon-btn" title="Eliminar" aria-label="Eliminar" data-gastos-delete-meta="${meta.id}">🗑️</button>`;
   }
- 
+
   const aporteFormHtml = isAportando ? `
     <div style="margin-top:8px;">
       <label>Monto del aporte</label>
@@ -2000,7 +1980,7 @@ function renderGastosMetaItem(meta){
         ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
       </div>
     </div>` : '';
- 
+
   const aportesListHtml = aportes.length ? aportes.map(a=>`
     <div class="task-card" style="padding:8px 10px;">
       <div class="task-top">
@@ -2011,13 +1991,13 @@ function renderGastosMetaItem(meta){
         </div>
       </div>
     </div>`).join('') : '';
- 
+
   let ritmoHtml = '';
   if(info.esperado !== null){
     const vaBien = info.diferencia >= 0;
     ritmoHtml = `<div class="task-meta" style="margin-top:2px;"><span class="${vaBien?'money-positive':'money-negative'}">${vaBien?'🟢 Vas adelantado':'🟠 Vas atrasado'} ${formatCOP(Math.abs(info.diferencia))} (deberías llevar ${formatCOP(info.esperado)} a estas alturas)</span></div>`;
   }
- 
+
   return `<div class="task-card ${completa?'status-terminada':'status-sin-iniciar'}">
     <div class="task-top">
       <div>
@@ -2037,7 +2017,7 @@ function renderGastosMetaItem(meta){
     ${aportesListHtml ? `<div style="margin-top:8px;">${aportesListHtml}</div>` : ''}
   </div>`;
 }
- 
+
 function viewGastosPrestamos(){
   let html = `<div class="panel">
     <h2>Lo que me deben</h2>
@@ -2061,13 +2041,13 @@ function viewGastosPrestamos(){
   html += `</div>`;
   return html;
 }
- 
+
 function renderGastosDeudaItem(cat, item, labels){
   const key = cat+':'+item.id;
   const isEditing = gastosEditingId===key;
   const isConfirmingDelete = gastosPendingDeleteId===key;
   const isAbonando = gastosEditingId === ('abono:'+cat+':'+item.id);
- 
+
   if(isEditing){
     return `<div class="task-card">
       <label>Nombre</label>
@@ -2088,7 +2068,7 @@ function renderGastosDeudaItem(cat, item, labels){
       </div>
     </div>`;
   }
- 
+
   const total = Number(item.amount||0);
   const conInteres = (cat==='espera' || cat==='prestamos');
   const amort = conInteres ? calcularAmortizacion(item) : null;
@@ -2098,7 +2078,7 @@ function renderGastosDeudaItem(cat, item, labels){
   const pagado = saldo <= 0;
   const isVencido = !pagado && item.date && item.date < todayStr();
   const abonos = (item.abonos||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
- 
+
   let actions;
   if(isConfirmingDelete){
     actions = iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`);
@@ -2108,7 +2088,7 @@ function renderGastosDeudaItem(cat, item, labels){
     if(conInteres && !amort.sinFecha) actions += `<button type="button" class="icon-btn" title="Ver tabla" aria-label="Ver tabla" data-ver-tabla="${item.id}" data-ver-tabla-cat="${cat}">📈</button>`;
     actions += iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
   }
- 
+
   const abonoFormHtml = isAbonando ? `
     <div style="margin-top:8px;">
       <label>Monto</label>
@@ -2120,7 +2100,7 @@ function renderGastosDeudaItem(cat, item, labels){
         ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
       </div>
     </div>` : '';
- 
+
   const abonosListHtml = abonos.length ? abonos.map(a=>`
     <div class="task-card" style="padding:8px 10px;">
       <div class="task-top">
@@ -2131,11 +2111,11 @@ function renderGastosDeudaItem(cat, item, labels){
         </div>
       </div>
     </div>`).join('') : '';
- 
+
   const detalleInteresHtml = conInteres
     ? `<div class="task-meta" style="margin-top:4px;">Capital pendiente: ${formatCOP(amort.saldoCapital)}${item.tasaMensual?` · Interés pendiente: ${formatCOP(amort.saldoInteres)}`:''} · Total: ${formatCOP(saldo)}${item.tasaMensual?` · Tasa: ${item.tasaMensual}% mensual`:''}${item.diaPago?` · día ${item.diaPago} de cada mes`:''}${amort.sinFecha?' · (agrega fecha para ver tabla)':''}</div>`
     : `<div class="task-meta" style="margin-top:4px;">${labels.abonadoLabel}: ${formatCOP(abonado)} · Saldo: ${formatCOP(saldo)}</div>`;
- 
+
   let cuotaHtml = '';
   if(cat==='espera' && item.cuotaPactada){
     const mesActualCuota = currentMonthStr();
@@ -2144,7 +2124,7 @@ function renderGastosDeudaItem(cat, item, labels){
     const cumplida = faltante <= 0;
     cuotaHtml = `<div class="task-meta" style="margin-top:2px;"><span class="${cumplida?'money-positive':'money-negative'}">${cumplida?'🟢':'🟠'} Cuota de ${monthLabel(mesActualCuota)}: pactada ${formatCOP(item.cuotaPactada)}, llevas ${formatCOP(abonadoEsteMes)}${cumplida?' — cumplida':` — te faltan ${formatCOP(faltante)}`}</span></div>`;
   }
- 
+
   return `<div class="task-card ${pagado?'status-terminada':(isVencido?'status-organizar':'status-sin-iniciar')}">
     <div class="task-top">
       <div>
@@ -2164,7 +2144,7 @@ function renderGastosDeudaItem(cat, item, labels){
     ${abonosListHtml ? `<div style="margin-top:8px;">${abonosListHtml}</div>` : ''}
   </div>`;
 }
- 
+
 function viewGastosDatedList(cat, list, title, filterByMonth){
   let html = `<div class="panel"><h2>${title}</h2>
     <div class="row">
@@ -2204,40 +2184,54 @@ function renderGastosDatedItem(cat, item){
   }
   const isVencido = item.status==='Pendiente' && item.date && item.date < todayStr();
   const statusClassLocal = item.status==='Pagado' ? 'status-terminada' : (isVencido ? 'status-organizar' : 'status-sin-iniciar');
+  const isRegistrando = gastosEditingId === ('registrarimprevisto:'+item.id);
   let actions;
   if(isConfirmingDelete){
     actions = iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`);
   } else {
     actions = iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`);
-    actions += item.status==='Pendiente'
-      ? iconAction('complete','check','Marcar pagado', `data-gastos-toggle-status="${key}"`)
-      : iconAction('cancel','x','Reabrir', `data-gastos-toggle-status="${key}"`);
+    if(item.status==='Pagado') actions += iconAction('cancel','x','Reabrir', `data-gastos-toggle-status="${key}"`);
     actions += iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
   }
+  const registroFormHtml = isRegistrando ? `
+    <div style="margin-top:8px;">
+      <label>Fecha real de pago</label>
+      <input type="date" id="gs_reg_imprevisto_fecha_${item.id}" value="${todayStr()}">
+      <div class="icon-actions" style="margin-top:8px;">
+        ${iconAction('save','save','Guardar', `data-gastos-registrar-imprevisto-save="${item.id}"`)}
+        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+      </div>
+    </div>` : '';
+  const registroBotonesHtml = (item.status==='Pendiente' && !isRegistrando) ? `
+    <button type="button" class="secondary" data-gastos-registrar-imprevisto-open="${item.id}" style="width:100%;margin-top:8px;">📝 Registrar pago</button>
+    <button type="button" class="secondary" data-gastos-aplazar-imprevisto="${item.id}" style="width:100%;margin-top:6px;">⏭️ Aplazar al mes siguiente</button>` : '';
   return `<div class="task-card ${statusClassLocal}">
     <div class="task-top">
       <div>
         <div class="task-name">${escapeHtml(item.name)}</div>
         <div class="task-meta">
           <span class="badge ${statusClassLocal}">${item.status}${isVencido?' · vencido':''}</span>
-          ${item.date?`<span>${item.date}</span>`:''}
+          ${item.date?`<span>Planeado: ${item.date}</span>`:''}
         </div>
+        ${item.fechaPago?`<div class="task-meta">Real: ${item.fechaPago}</div>`:''}
       </div>
       <div class="task-name">${formatCOP(item.amount)}</div>
     </div>
     <div class="icon-actions" style="margin-top:8px;">${actions}</div>
+    ${registroFormHtml}
+    ${registroBotonesHtml}
   </div>`;
 }
- 
+
 function renderGastosCharts(){
   if(typeof window.Chart === 'undefined') return;
   const meses = ultimosMeses(6);
   const resumenes = meses.map(m=>computeMonthSummary(m));
   const labels = meses.map(m=>monthLabel(m).split(' ')[0].slice(0,3)+' '+m.slice(2,4));
- 
+
   Object.values(chartInstances).forEach(ch=>{ if(ch) ch.destroy(); });
   chartInstances = {};
- 
+
   const elDisponible = document.getElementById('chart-disponible');
   if(elDisponible){
     chartInstances.disponible = new Chart(elDisponible, {
@@ -2256,7 +2250,7 @@ function renderGastosCharts(){
       options: { plugins:{legend:{display:false}}, scales:{ y:{ ticks:{ callback:v=>formatCOP(v) } } } }
     });
   }
- 
+
   const elIG = document.getElementById('chart-ingresos-gastos');
   if(elIG){
     chartInstances.ingresosGastos = new Chart(elIG, {
@@ -2271,7 +2265,7 @@ function renderGastosCharts(){
       options: { plugins:{legend:{position:'bottom'}}, scales:{ y:{ ticks:{ callback:v=>formatCOP(v) } } } }
     });
   }
- 
+
   const elDist = document.getElementById('chart-distribucion');
   if(elDist){
     const actual = resumenes[resumenes.length-1];
@@ -2294,13 +2288,19 @@ function renderGastosCharts(){
     }
   }
 }
- 
+
 function getAllMovimientos(){
   const movimientos = [];
- 
+
   gastosIngresos.forEach(i=>{
+    const mesesVistos = new Set();
+    Object.keys(i.registros||{}).forEach(mes=>{
+      const r = i.registros[mes];
+      movimientos.push({fecha:r.fecha||mes, tipo:'Ingreso', icono:'💵', nombre:i.name, monto:r.monto, signo:1});
+      mesesVistos.add(mes);
+    });
     Object.keys(i.paidMonths||{}).forEach(mes=>{
-      if(i.paidMonths[mes]){
+      if(i.paidMonths[mes] && !mesesVistos.has(mes)){
         const info = gastosMonthlyInfo('ingresos', i, mes);
         movimientos.push({fecha:mes, tipo:'Ingreso', icono:'💵', nombre:i.name, monto:info.real, signo:1});
       }
@@ -2308,8 +2308,14 @@ function getAllMovimientos(){
   });
   gastosFijos.forEach(i=>{
     if(!i.isProvision){
+      const mesesVistos = new Set();
+      Object.keys(i.registros||{}).forEach(mes=>{
+        const r = i.registros[mes];
+        movimientos.push({fecha:r.fecha||mes, tipo:'Fijo', icono:'📌', nombre:i.name, monto:r.monto, signo:-1});
+        mesesVistos.add(mes);
+      });
       Object.keys(i.paidMonths||{}).forEach(mes=>{
-        if(i.paidMonths[mes]){
+        if(i.paidMonths[mes] && !mesesVistos.has(mes)){
           const info = gastosMonthlyInfo('fijos', i, mes);
           movimientos.push({fecha:mes, tipo:'Fijo', icono:'📌', nombre:i.name, monto:info.real, signo:-1});
         }
@@ -2347,21 +2353,20 @@ function getAllMovimientos(){
       movimientos.push({fecha:a.date||'', tipo:'Aporte a meta', icono:'🎯', nombre:m.name, monto:a.amount, signo:-1});
     });
   });
- 
+
   movimientos.sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||''));
   return movimientos;
 }
- 
-function viewGastosHistorial(){
-  let html = renderMonthNav();
-  html += `<div class="panel">
-    <h2>Historial de ${monthLabel(gastosViewMonth)}</h2>
-    <div class="status-msg">Todos los movimientos reales de este mes, juntos y ordenados por fecha.</div>
+
+function viewGastosDatos(){
+  let html = `<div class="panel">
+    <h2>Datos de Gastos</h2>
+    <div class="status-msg">Exportar/importar afecta TODO Gastos, no un mes en particular.</div>
     <button type="button" class="secondary" data-descargar-gastos-excel="1" style="width:100%;">⬇️ Descargar backup completo en Excel</button>
     <label style="margin-top:12px;">Restaurar backup (⚠️ reemplaza TODO lo de Gastos, las Tareas no se tocan)</label>
     <input type="file" id="gastos_import_file" accept=".xlsx">
   </div>`;
- 
+
   if(gastosImportConfirmPending && gastosImportPendingData){
     const d = gastosImportPendingData;
     html += `<div class="panel">
@@ -2375,21 +2380,30 @@ function viewGastosHistorial(){
       </div>
     </div>`;
   }
- 
+  return html;
+}
+
+function viewGastosHistorial(){
+  let html = renderMonthNav();
+  html += `<div class="panel">
+    <h2>Historial de ${monthLabel(gastosViewMonth)}</h2>
+    <div class="status-msg">Todos los movimientos reales de este mes, juntos y ordenados por fecha. Esta pantalla es solo de consulta — para registrar o corregir algo, ve a la pestaña de esa categoría.</div>
+  </div>`;
+
   const mes = gastosViewMonth;
   const movimientos = getAllMovimientos().filter(m=>(m.fecha||'').slice(0,7)===mes);
   if(movimientos.length===0){
     html += `<div class="panel"><div class="empty">Sin movimientos registrados este mes.</div></div>`;
     return html;
   }
- 
+
   const totalEntradas = movimientos.filter(m=>m.signo>0).reduce((s,m)=>s+m.monto,0);
   const totalSalidas = movimientos.filter(m=>m.signo<0).reduce((s,m)=>s+m.monto,0);
   html += `<div class="panel">
     <div class="money-row"><span>Total entradas</span><span class="money-positive">+${formatCOP(totalEntradas)}</span></div>
     <div class="money-row"><span>Total salidas</span><span class="money-negative">-${formatCOP(totalSalidas)}</span></div>
   </div>`;
- 
+
   html += `<div class="panel">`;
   movimientos.forEach(m=>{
     html += `<div class="task-card">
@@ -2405,19 +2419,19 @@ function viewGastosHistorial(){
   html += `</div>`;
   return html;
 }
- 
+
 function viewGastosDia(){
   const today = todayStr();
   const todayDay = new Date().getDate();
   const mesActual = currentMonthStr();
   let html = `<div class="panel"><h2>Pagos por hacer</h2><div class="status-msg">Lo que vence hoy, y todo lo demás que sigue pendiente de pagar o cobrar.</div></div>`;
- 
+
   const fijosHoy = gastosFijos.filter(i=>!i.isProvision && i.dueDay===todayDay);
   const ciclicosHoy = gastosCiclicos.filter(c=>c.nextDueDate===today);
   const imprevistosHoy = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date===today);
   const esperaVencidosAtras = gastosEspera.filter(e=>e.status==='Pendiente' && e.date && e.date < today && !e.diaPago);
   const esperaHoy = gastosEspera.filter(e=>e.status==='Pendiente' && e.diaPago===todayDay);
- 
+
   const anyHoy = fijosHoy.length || ciclicosHoy.length || imprevistosHoy.length || esperaHoy.length;
   html += `<div class="panel"><h2>🔴 Vence hoy</h2>`;
   if(!anyHoy){
@@ -2433,8 +2447,7 @@ function viewGastosDia(){
     });
     imprevistosHoy.forEach(e=>{
       totalHoy += Number(e.amount||0);
-      filasHoy += renderGastosPendingRow('⚡ '+e.name, e.amount, {type:'imprevisto', id:e.id});
-      filasHoy += `<div class="task-actions" style="margin-top:-4px;margin-bottom:6px;"><button type="button" class="secondary" data-gastos-aplazar-imprevisto="${e.id}" style="width:100%;">⏭️ Aplazar al mes siguiente</button></div>`;
+      filasHoy += renderGastosPendingRow('⚡ '+e.name, e.amount, null);
     });
     esperaHoy.forEach(e=>{
       const saldoE = deudaSaldoActual('espera', e);
@@ -2444,12 +2457,12 @@ function viewGastosDia(){
     html += `<div class="money-row total"><span>Total de hoy</span><span class="money-negative">${formatCOP(totalHoy)}</span></div>${filasHoy}`;
   }
   html += `</div>`;
- 
-  const fijosPend = gastosFijos.filter(i=>!i.isProvision && !fijosHoy.includes(i) && !(i.paidMonths && i.paidMonths[mesActual]));
+
+  const fijosPend = gastosFijos.filter(i=>!i.isProvision && !fijosHoy.includes(i) && !estaRegistrado(i, mesActual));
   const ciclicosPend = gastosCiclicos.filter(c=>!ciclicosHoy.includes(c) && !(c.contributions && c.contributions[mesActual]!==undefined));
   const imprevistosPend = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && !imprevistosHoy.includes(e));
   const esperaPend = gastosEspera.filter(e=>e.status==='Pendiente' && !esperaHoy.includes(e) && deudaSaldoActual('espera', e)>0);
- 
+
   const anyPend = fijosPend.length || ciclicosPend.length || imprevistosPend.length || esperaPend.length;
   html += `<div class="panel"><h2>🟡 Otros pendientes</h2>`;
   if(!anyPend){
@@ -2465,8 +2478,7 @@ function viewGastosDia(){
     });
     imprevistosPend.forEach(e=>{
       totalOtros += Number(e.amount||0);
-      filasOtros += renderGastosPendingRow('⚡ '+e.name+(e.date?` (${e.date})`:''), e.amount, {type:'imprevisto', id:e.id});
-      filasOtros += `<div class="task-actions" style="margin-top:-4px;margin-bottom:6px;"><button type="button" class="secondary" data-gastos-aplazar-imprevisto="${e.id}" style="width:100%;">⏭️ Aplazar al mes siguiente</button></div>`;
+      filasOtros += renderGastosPendingRow('⚡ '+e.name+(e.date?` (${e.date})`:''), e.amount, null);
     });
     esperaPend.forEach(e=>{
       const saldoE = deudaSaldoActual('espera', e);
@@ -2476,9 +2488,9 @@ function viewGastosDia(){
     html += `<div class="money-row total"><span>Total otros pendientes</span><span class="money-negative">${formatCOP(totalOtros)}</span></div>${filasOtros}`;
   }
   html += `</div>`;
- 
+
   // ---------- Por cobrar ----------
-  const ingresosHoy = gastosIngresos.filter(i=>i.dueDay===todayDay && !(i.paidMonths && i.paidMonths[mesActual]));
+  const ingresosHoy = gastosIngresos.filter(i=>i.dueDay===todayDay && !estaRegistrado(i, mesActual));
   const prestamosHoy = gastosPrestamos.filter(p=>p.diaPago===todayDay && deudaSaldoActual('prestamos', p)>0);
   const anyCobrarHoy = ingresosHoy.length || prestamosHoy.length;
   html += `<div class="panel"><h2>💰 Por cobrar hoy</h2>`;
@@ -2500,8 +2512,8 @@ function viewGastosDia(){
     html += `<div class="money-row total"><span>Total por cobrar hoy</span><span class="money-positive">+${formatCOP(totalCobrarHoy)}</span></div>${filasCobrarHoy}`;
   }
   html += `</div>`;
- 
-  const ingresosPendCobro = gastosIngresos.filter(i=>!ingresosHoy.includes(i) && !(i.paidMonths && i.paidMonths[mesActual]));
+
+  const ingresosPendCobro = gastosIngresos.filter(i=>!ingresosHoy.includes(i) && !estaRegistrado(i, mesActual));
   const prestamosPendCobro = gastosPrestamos.filter(p=>!prestamosHoy.includes(p) && deudaSaldoActual('prestamos', p)>0);
   const anyPendCobro = ingresosPendCobro.length || prestamosPendCobro.length;
   html += `<div class="panel"><h2>🟢 Otros por cobrar</h2>`;
@@ -2523,14 +2535,14 @@ function viewGastosDia(){
     html += `<div class="money-row total"><span>Total otros por cobrar</span><span class="money-positive">+${formatCOP(totalPendCobro)}</span></div>${filasPendCobro}`;
   }
   html += `</div>`;
- 
-  const fijosPagados = gastosFijos.filter(i=>!i.isProvision && i.paidMonths && i.paidMonths[mesActual]);
+
+  const fijosPagados = gastosFijos.filter(i=>!i.isProvision && estaRegistrado(i, mesActual));
   const ciclicosPagados = gastosCiclicos.filter(c=>c.contributions && c.contributions[mesActual]!==undefined);
   const imprevistosPagados = gastosExtraordinarios.filter(e=>e.status==='Pagado' && e.date && e.date.slice(0,7)===mesActual);
   const esperaPagados = gastosEspera.filter(e=>e.status==='Pagado');
-  const ingresosRecibidos = gastosIngresos.filter(i=>i.paidMonths && i.paidMonths[mesActual]);
+  const ingresosRecibidos = gastosIngresos.filter(i=>estaRegistrado(i, mesActual));
   const prestamosCobrados = gastosPrestamos.filter(p=>p.status==='Pagado');
- 
+
   const anyPagado = fijosPagados.length || ciclicosPagados.length || imprevistosPagados.length || esperaPagados.length || ingresosRecibidos.length || prestamosCobrados.length;
   if(anyPagado){
     html += `<div class="panel"><h2>✅ Ya pagado / cobrado (${monthLabel(mesActual)})</h2>`;
@@ -2548,10 +2560,10 @@ function viewGastosDia(){
     prestamosCobrados.forEach(p=>{ html += renderGastosPendingRow('🤝 '+p.name+' (saldado)', p.amount, null, true); });
     html += `</div>`;
   }
- 
+
   return html;
 }
- 
+
 function viewGastosCiclicos(){
   let html = `<div class="panel">
     <h2>Ahorros</h2>
@@ -2600,7 +2612,7 @@ function renderGastosCiclicoItem(c){
   const pct = total>0 ? Math.min(100, Math.round((acumulado/total)*100)) : 0;
   const yaAporto = !!(c.contributions && c.contributions[gastosViewMonth]!==undefined);
   const completo = acumulado >= total && total>0;
- 
+
   let actions;
   if(isConfirmingDelete){
     actions = iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`);
@@ -2615,7 +2627,7 @@ function renderGastosCiclicoItem(c){
     }
     actions += iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
   }
- 
+
   return `<div class="task-card">
     <div class="task-top">
       <div>
@@ -2629,11 +2641,11 @@ function renderGastosCiclicoItem(c){
     <div class="icon-actions" style="margin-top:8px;">${actions}</div>
   </div>`;
 }
- 
- 
+
+
 // ---------- Interfaz Datos (exportar / importar) ----------
 const DATA_COLUMNS = ['Nombre','Área','Prioridad','Esfuerzo','Energía','Fecha','Estado','Proyecto','Observaciones','Fecha completada'];
- 
+
 function viewDatos(){
   const importRows = importConfirmPending ? countImportRows(pendingImportText) : 0;
   return `
@@ -2669,7 +2681,7 @@ function countImportRows(raw){
   const lines = (raw||'').split(/\r?\n/).filter(l=>l.trim().length>0);
   return Math.max(0, lines.length - 1);
 }
- 
+
 function exportExcel(){
   if(typeof XLSX === 'undefined'){
     alert('No se pudo cargar la librería de Excel. Verifica tu conexión a internet e intenta de nuevo.');
@@ -2692,66 +2704,66 @@ function exportExcel(){
   XLSX.utils.book_append_sheet(wb, ws, 'Tareas');
   XLSX.writeFile(wb, 'tareas_'+todayStr()+'.xlsx');
 }
- 
+
 function procesarImportacionGastos(sheets){
   const nuevosIngresos = (sheets['Ingresos']||[]).map(r=>({
-    id:uid(), name:String(r['Nombre']||'').trim(), amount:Number(r['Monto planeado'])||0, overrides:{}, paidMonths:{}
+    id:uid(), name:String(r['Nombre']||'').trim(), amount:Number(r['Monto planeado'])||0, overrides:{}, paidMonths:{}, registros:{}
   })).filter(i=>i.name);
- 
+
   const nuevosFijos = (sheets['Pagos Fijos']||[]).map(r=>{
     const isProv = String(r['Es provisión']||'').trim()==='Sí';
-    const item = { id:uid(), name:String(r['Nombre']||'').trim(), amount:Number(r['Monto planeado'])||0, overrides:{}, paidMonths:{} };
+    const item = { id:uid(), name:String(r['Nombre']||'').trim(), amount:Number(r['Monto planeado'])||0, overrides:{}, paidMonths:{}, registros:{} };
     if(isProv){ item.isProvision = true; item.transactions = {}; }
     const dueDay = parseInt(r['Día vencimiento'],10);
     if(dueDay>=1 && dueDay<=31) item.dueDay = dueDay;
     return item;
   }).filter(i=>i.name);
- 
+
   const nuevosCiclicos = (sheets['Ahorros']||[]).map(r=>({
     id:uid(), name:String(r['Nombre']||'').trim(), totalAmount:Number(r['Monto total'])||0,
     periodMonths: Number(r['Cada cuántos meses'])||1, nextDueDate: r['Próxima fecha']||null, contributions:{}
   })).filter(c=>c.name);
- 
+
   const nuevosImprevistos = (sheets['Imprevistos']||[]).map(r=>({
     id:uid(), name:String(r['Nombre']||'').trim(), amount:Number(r['Monto'])||0, date:r['Fecha']||null,
     status: r['Estado']||'Pendiente'
   })).filter(e=>e.name);
- 
+
   const nuevosEspera = (sheets['Lo que debo']||[]).map(r=>({
     id:uid(), name:String(r['Nombre']||'').trim(), amount:Number(r['Monto'])||0, date:r['Fecha']||null,
     tasaMensual: Number(r['Tasa mensual %'])||0,
     cuotaPactada: r['Cuota pactada'] ? Number(r['Cuota pactada']) : null,
     status: r['Estado']||'Pendiente', abonos:[]
   })).filter(e=>e.name);
- 
+
   const nuevosPrestamos = (sheets['Lo que me deben']||[]).map(r=>({
     id:uid(), name:String(r['Nombre']||'').trim(), amount:Number(r['Monto'])||0, date:r['Fecha']||null,
     tasaMensual: Number(r['Tasa mensual %'])||0,
     status: r['Estado']||'Pendiente', abonos:[]
   })).filter(p=>p.name);
- 
+
   const nuevasMetas = (sheets['Metas']||[]).map(r=>({
     id:uid(), name:String(r['Nombre']||'').trim(), montoObjetivo:Number(r['Monto objetivo'])||0,
     fechaLimite: r['Fecha límite']||null, aportes:[], createdAt:Date.now()
   })).filter(m=>m.name);
- 
+
   const movimientos = sheets['Movimientos']||[];
   const advertencias = [];
- 
+
   movimientos.forEach(row=>{
     const tipo = row['Tipo'];
     const nombre = String(row['Nombre']||'').trim();
     const fecha = row['Fecha'] ? String(row['Fecha']) : '';
     const monto = Number(row['Monto'])||0;
     if(!nombre || !fecha || monto<=0) return;
- 
+
     if(tipo==='Ingreso'){
       const item = nuevosIngresos.find(i=>i.name===nombre);
-      if(item){ item.paidMonths[fecha]=true; if(monto!==item.amount) item.overrides[fecha]=monto; }
+      if(item){ const mesKey = fecha.length>7?fecha.slice(0,7):fecha; if(!item.registros) item.registros={}; item.registros[mesKey] = { fecha: fecha.length>7?fecha:null, monto }; }
       else advertencias.push(`No se encontró el ingreso "${nombre}" (movimiento de ${fecha}).`);
     } else if(tipo==='Fijo'){
       const item = nuevosFijos.find(i=>i.name===nombre && !i.isProvision);
-      if(item){ item.paidMonths[fecha]=true; if(monto!==item.amount) item.overrides[fecha]=monto; }
+      if(item){ const mesKey = fecha.length>7?fecha.slice(0,7):fecha; if(!item.registros) item.registros={}; item.registros[mesKey] = { fecha: fecha.length>7?fecha:null, monto }; }
       else advertencias.push(`No se encontró el pago fijo "${nombre}" (movimiento de ${fecha}).`);
     } else if(tipo==='Provisión'){
       let item = nuevosFijos.find(i=>i.isProvision && i.name===nombre);
@@ -2784,17 +2796,17 @@ function procesarImportacionGastos(sheets){
       else advertencias.push(`No se encontró la meta "${nombre}" (aporte de ${fecha}).`);
     }
   });
- 
+
   nuevosEspera.forEach(e=>{ e.status = deudaSaldoActual('espera', e) <= 0 ? 'Pagado' : 'Pendiente'; });
   nuevosPrestamos.forEach(p=>{ p.status = deudaSaldoActual('prestamos', p) <= 0 ? 'Pagado' : 'Pendiente'; });
- 
+
   return {
     ingresos:nuevosIngresos, fijos:nuevosFijos, ciclicos:nuevosCiclicos,
     extraordinarios:nuevosImprevistos, espera:nuevosEspera, prestamos:nuevosPrestamos,
     metas:nuevasMetas, advertencias,
   };
 }
- 
+
 function onGastosImportFileSelected(event){
   const file = event.target.files && event.target.files[0];
   if(!file) return;
@@ -2821,7 +2833,7 @@ function onGastosImportFileSelected(event){
   };
   reader.readAsArrayBuffer(file);
 }
- 
+
 async function onGastosImportConfirm(){
   if(!gastosImportPendingData) return;
   const d = gastosImportPendingData;
@@ -2849,63 +2861,63 @@ function onGastosImportCancel(){
   gastosImportPendingData = null;
   render();
 }
- 
+
 function exportGastosExcel(){
   if(typeof XLSX === 'undefined'){
     alert('No se pudo cargar la librería de Excel. Verifica tu conexión a internet e intenta de nuevo.');
     return;
   }
   const wb = XLSX.utils.book_new();
- 
+
   const ingresosRows = gastosIngresos.map(i=>({ 'Nombre':i.name||'', 'Monto planeado':i.amount||0 }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ingresosRows), 'Ingresos');
- 
+
   const fijosRows = gastosFijos.map(i=>({
     'Nombre':i.name||'', 'Monto planeado':i.amount||0,
     'Es provisión':i.isProvision?'Sí':'No', 'Día vencimiento':i.dueDay||'',
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(fijosRows), 'Pagos Fijos');
- 
+
   const ciclicosRows = gastosCiclicos.map(c=>({
     'Nombre':c.name||'', 'Monto total':c.totalAmount||0,
     'Cada cuántos meses':c.periodMonths||'', 'Próxima fecha':c.nextDueDate||'',
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ciclicosRows), 'Ahorros');
- 
+
   const imprevistosRows = gastosExtraordinarios.map(e=>({
     'Nombre':e.name||'', 'Monto':e.amount||0, 'Fecha':e.date||'', 'Estado':e.status||'',
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(imprevistosRows), 'Imprevistos');
- 
+
   const esperaRows = gastosEspera.map(e=>({
     'Nombre':e.name||'', 'Monto':e.amount||0, 'Fecha':e.date||'',
     'Tasa mensual %':e.tasaMensual||0, 'Cuota pactada':e.cuotaPactada||'',
     'Abonado':esperaAbonado(e), 'Saldo actual':deudaSaldoActual('espera', e), 'Estado':e.status||'',
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(esperaRows), 'Lo que debo');
- 
+
   const prestamosRows = gastosPrestamos.map(p=>({
     'Nombre':p.name||'', 'Monto':p.amount||0, 'Fecha':p.date||'',
     'Tasa mensual %':p.tasaMensual||0,
     'Cobrado':esperaAbonado(p), 'Saldo actual':deudaSaldoActual('prestamos', p), 'Estado':p.status||'',
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(prestamosRows), 'Lo que me deben');
- 
+
   const metasRows = gastosMetas.map(m=>({
     'Nombre':m.name||'', 'Monto objetivo':m.montoObjetivo||0, 'Fecha límite':m.fechaLimite||'',
     'Aportado':metaAportado(m),
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(metasRows), 'Metas');
- 
+
   const movimientosRows = getAllMovimientos().map(m=>({
     'Fecha':m.fecha||'', 'Tipo':m.tipo, 'Nombre':m.nombre,
     'Monto':m.monto, 'Movimiento':m.signo>0?'Entrada':'Salida',
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(movimientosRows), 'Movimientos');
- 
+
   XLSX.writeFile(wb, 'gastos_'+todayStr()+'.xlsx');
 }
- 
+
 function requestImport(){
   const textarea = document.getElementById('import_paste');
   const raw = textarea ? textarea.value : '';
@@ -2914,7 +2926,7 @@ function requestImport(){
   importConfirmPending = true;
   render();
 }
- 
+
 async function runImport(){
   const raw = pendingImportText;
   const lines = raw.split(/\r?\n/).filter(l=>l.trim().length>0);
@@ -2929,38 +2941,38 @@ async function runImport(){
     headers.forEach((h,idx)=> row[h] = (cells[idx]||'').trim());
     const name = row['Nombre'];
     if(!name) continue;
- 
+
     const areaLabel = row['Área'];
     let area = null;
     if(areaLabel){
       for(const k of AREAS){ if(AREA_LABEL[k]===areaLabel || k===areaLabel){ area=k; break; } }
       if(!area) warnings.push(`Fila ${filaNum} ("${name}"): el área "${areaLabel}" no es válida. Debe ser una de: ${AREAS.map(a=>AREA_LABEL[a]).join(', ')}. Se dejó en blanco.`);
     }
- 
+
     let priority = null;
     if(row['Prioridad']){
       priority = PRIORITIES.includes(row['Prioridad']) ? row['Prioridad'] : null;
       if(!priority) warnings.push(`Fila ${filaNum} ("${name}"): la prioridad "${row['Prioridad']}" no es válida. Debe ser una de: ${PRIORITIES.join(', ')}. Se dejó en blanco.`);
     }
- 
+
     let effort = null;
     if(row['Esfuerzo']){
       effort = EFFORTS.includes(row['Esfuerzo']) ? row['Esfuerzo'] : null;
       if(!effort) warnings.push(`Fila ${filaNum} ("${name}"): el esfuerzo "${row['Esfuerzo']}" no es válido. Debe ser uno de: ${EFFORTS.join(', ')}. Se dejó en blanco.`);
     }
- 
+
     let energy = null;
     if(row['Energía']){
       energy = ENERGIES.includes(row['Energía']) ? row['Energía'] : null;
       if(!energy) warnings.push(`Fila ${filaNum} ("${name}"): la energía "${row['Energía']}" no es válida. Debe ser una de: ${ENERGIES.join(', ')}. Se dejó en blanco.`);
     }
- 
+
     let date = null;
     if(row['Fecha']){
       date = /^\d{4}-\d{2}-\d{2}$/.test(row['Fecha']) ? row['Fecha'] : null;
       if(!date) warnings.push(`Fila ${filaNum} ("${name}"): la fecha "${row['Fecha']}" no tiene el formato válido. Debe ser AAAA-MM-DD (ejemplo: 2026-07-21). Se dejó en blanco.`);
     }
- 
+
     let status = 'Por organizar';
     if(row['Estado']){
       if(STATUSES.includes(row['Estado'])){
@@ -2969,22 +2981,22 @@ async function runImport(){
         warnings.push(`Fila ${filaNum} ("${name}"): el estado "${row['Estado']}" no es válido. Debe ser uno de: ${STATUSES.join(', ')}. Se usó "Por organizar".`);
       }
     }
- 
+
     const notes = row['Observaciones'] || '';
- 
+
     let completedDate = null;
     if(row['Fecha completada']){
       completedDate = /^\d{4}-\d{2}-\d{2}$/.test(row['Fecha completada']) ? row['Fecha completada'] : null;
       if(!completedDate) warnings.push(`Fila ${filaNum} ("${name}"): la fecha completada "${row['Fecha completada']}" no tiene el formato válido. Debe ser AAAA-MM-DD. Se dejó en blanco.`);
     }
- 
+
     const projectName = row['Proyecto'];
     let project = null;
     if(projectName){
       project = getOrCreateProject(projectName, area);
       if(project.area) area = project.area;
     }
- 
+
     newTasks.push({
       id: uid(), name, area, priority, effort, energy, date, status,
       project: project?project.name:null, notes, completedDate, createdAt: Date.now(),
@@ -3001,7 +3013,7 @@ async function runImport(){
     alert(tasks.length + ' tarea(s) importada(s). Se reemplazaron todas las tareas anteriores.');
   }
 }
- 
+
 // ---------- Eventos ----------
 function bindEvents(){
   document.querySelectorAll('[data-home-select]').forEach(b=>{
@@ -3026,7 +3038,7 @@ function bindEvents(){
       };
     }
   });
- 
+
   document.querySelectorAll('[data-new-organize]').forEach(b=>{
     b.onclick = ()=>{ editingTaskId='__new__'; render(); };
   });
@@ -3039,7 +3051,7 @@ function bindEvents(){
   document.querySelectorAll('[data-cancel-organize]').forEach(b=>{
     b.onclick = ()=>{ editingTaskId=null; render(); };
   });
- 
+
   document.querySelectorAll('[data-edit-matrix]').forEach(b=>{
     b.onclick = ()=>{ editingTaskId = 'm_'+b.getAttribute('data-edit-matrix'); pendingDeleteId=null; render(); };
   });
@@ -3061,7 +3073,7 @@ function bindEvents(){
   document.querySelectorAll('[data-close-view]').forEach(b=>{
     b.onclick = ()=>{ viewingTaskId = null; render(); };
   });
- 
+
   document.querySelectorAll('[data-delete-matrix]').forEach(b=>{
     b.onclick = ()=>{ pendingDeleteId = b.getAttribute('data-delete-matrix'); render(); };
   });
@@ -3071,7 +3083,7 @@ function bindEvents(){
   document.querySelectorAll('[data-cancel-delete]').forEach(b=>{
     b.onclick = ()=>{ pendingDeleteId=null; render(); };
   });
- 
+
   document.querySelectorAll('[data-toggle-project]').forEach(b=>{
     b.onclick = ()=>{
       const pid = b.getAttribute('data-toggle-project');
@@ -3106,10 +3118,10 @@ function bindEvents(){
   document.querySelectorAll('[data-confirm-delete-project]').forEach(b=>{
     b.onclick = ()=>onDeleteProject(b.getAttribute('data-confirm-delete-project'));
   });
- 
+
   const compFilter = document.getElementById('comp_area_filter');
   if(compFilter) compFilter.onchange = (e)=>{ matrixAreaFilter = e.target.value || null; render(); };
- 
+
   const btnExport = document.getElementById('btn_export_excel');
   if(btnExport) btnExport.onclick = exportExcel;
   const btnImport = document.getElementById('btn_import_excel');
@@ -3129,7 +3141,7 @@ function bindEvents(){
   document.querySelectorAll('[data-dismiss-warnings]').forEach(b=>{
     b.onclick = ()=>{ importWarnings=[]; render(); };
   });
- 
+
   document.querySelectorAll('[data-gastos-tab]').forEach(b=>{
     b.onclick = ()=>{ gastosSubTab = b.getAttribute('data-gastos-tab'); gastosEditingId=null; gastosPendingDeleteId=null; render(); };
   });
@@ -3163,6 +3175,12 @@ function bindEvents(){
   document.querySelectorAll('[data-gastos-toggle-status]').forEach(b=>{
     b.onclick = ()=>onGastosToggleStatus(b.getAttribute('data-gastos-toggle-status'));
   });
+  document.querySelectorAll('[data-gastos-registrar-imprevisto-open]').forEach(b=>{
+    b.onclick = ()=>{ gastosEditingId = 'registrarimprevisto:'+b.getAttribute('data-gastos-registrar-imprevisto-open'); render(); };
+  });
+  document.querySelectorAll('[data-gastos-registrar-imprevisto-save]').forEach(b=>{
+    b.onclick = ()=>onGastosRegistrarImprevisto(b.getAttribute('data-gastos-registrar-imprevisto-save'));
+  });
   document.querySelectorAll('[data-gastos-aplazar-imprevisto]').forEach(b=>{
     b.onclick = ()=>onGastosAplazarImprevisto(b.getAttribute('data-gastos-aplazar-imprevisto'));
   });
@@ -3187,14 +3205,14 @@ function bindEvents(){
   document.querySelectorAll('[data-gastos-reconcile-save]').forEach(b=>{
     b.onclick = ()=>onGastosReconcileSave(b.getAttribute('data-gastos-reconcile-save'));
   });
-  document.querySelectorAll('[data-gastos-inline-amount]').forEach(inp=>{
-    inp.onchange = ()=>onGastosInlineAmount(inp.getAttribute('data-gastos-inline-amount'), inp.value);
+  document.querySelectorAll('[data-gastos-registrar-open]').forEach(b=>{
+    b.onclick = ()=>{ gastosEditingId = 'registrar:'+b.getAttribute('data-gastos-registrar-open'); render(); };
   });
-  document.querySelectorAll('[data-gastos-toggle-paid]').forEach(b=>{
-    b.onclick = ()=>onGastosTogglePaid(b.getAttribute('data-gastos-toggle-paid'));
+  document.querySelectorAll('[data-gastos-registrar-pago]').forEach(b=>{
+    b.onclick = ()=>onGastosRegistrarPago(b.getAttribute('data-gastos-registrar-pago'));
   });
-  document.querySelectorAll('[data-gastos-quick-check]').forEach(b=>{
-    b.onclick = ()=>onGastosQuickCheck(b.getAttribute('data-gastos-quick-check'));
+  document.querySelectorAll('[data-gastos-registro-quitar]').forEach(b=>{
+    b.onclick = ()=>onGastosRegistroQuitar(b.getAttribute('data-gastos-registro-quitar'));
   });
   document.querySelectorAll('[data-gastos-provision-open]').forEach(b=>{
     b.onclick = ()=>{ gastosEditingId = 'provquick:'+b.getAttribute('data-gastos-provision-open'); render(); };
@@ -3259,7 +3277,7 @@ function bindEvents(){
     b.onclick = ()=>onGastosCerrarMes();
   });
 }
- 
+
 async function onCrearTarea(area){
   const nameInput = document.getElementById('c_name_'+area);
   const raw = nameInput.value;
@@ -3286,12 +3304,12 @@ async function onCrearTarea(area){
   nameInput.style.height='';
   nameInput.focus();
 }
- 
+
 async function onSaveOrganize(id){
   const isNew = (id === '__new__');
   let t = isNew ? null : tasks.find(x=>x.id===id);
   if(!isNew && !t) return;
- 
+
   const name = document.getElementById('d_name').value.trim();
   const area = document.getElementById('d_area').value || null;
   const date = document.getElementById('d_date').value || null;
@@ -3299,7 +3317,7 @@ async function onSaveOrganize(id){
   const effort = document.getElementById('d_effort').value || null;
   const energy = document.getElementById('d_energy').value || null;
   const notes = document.getElementById('d_notes').value || '';
- 
+
   const faltantes = [];
   if(!name) faltantes.push('nombre');
   if(!area) faltantes.push('área');
@@ -3311,7 +3329,7 @@ async function onSaveOrganize(id){
     alert('Falta completar: ' + faltantes.join(', ') + '. Todos los campos son obligatorios, excepto proyecto y observaciones.');
     return;
   }
- 
+
   const projectName = document.getElementById('d_project').value.trim();
   let project = null;
   if(projectName){
@@ -3326,7 +3344,7 @@ async function onSaveOrganize(id){
       project = getOrCreateProject(projectName, area);
     }
   }
- 
+
   if(isNew){
     t = {
       id: uid(), name, area, date, priority, effort, energy,
@@ -3350,7 +3368,7 @@ async function onSaveOrganize(id){
   editingTaskId = null;
   render();
 }
- 
+
 async function onSaveMatrix(id){
   const t = tasks.find(x=>x.id===id);
   if(!t) return;
@@ -3384,7 +3402,7 @@ async function onSaveMatrix(id){
   editingTaskId = null;
   render();
 }
- 
+
 async function onCompleteMatrix(id){
   const t = tasks.find(x=>x.id===id);
   if(!t) return;
@@ -3394,7 +3412,7 @@ async function onCompleteMatrix(id){
   editingTaskId = null;
   render();
 }
- 
+
 async function onPostponeTomorrow(id){
   const t = tasks.find(x=>x.id===id);
   if(!t) return;
@@ -3402,7 +3420,7 @@ async function onPostponeTomorrow(id){
   await saveTasks();
   render();
 }
- 
+
 async function onDeleteMatrix(id){
   tasks = tasks.filter(t=>t.id!==id);
   pendingDeleteId = null;
@@ -3410,7 +3428,7 @@ async function onDeleteMatrix(id){
   await saveTasks();
   render();
 }
- 
+
 async function onSaveProjectName(id){
   const p = projects.find(x=>x.id===id);
   if(!p) return;
@@ -3438,7 +3456,7 @@ async function onSaveProjectName(id){
   editingProjectId = null;
   render();
 }
- 
+
 async function onDeleteProject(id){
   const p = projects.find(x=>x.id===id);
   if(!p) return;
@@ -3454,7 +3472,7 @@ async function onDeleteProject(id){
   await saveProjects();
   render();
 }
- 
+
 // ---------- Lógica del módulo Gastos ----------
 function gastosListFor(cat){
   if(cat==='ingresos') return gastosIngresos;
@@ -3469,13 +3487,13 @@ function parseMoney(v){
   const n = Number(String(v||'').replace(/[^0-9.-]/g,''));
   return isNaN(n) ? 0 : n;
 }
- 
+
 async function onGastosAdd(cat){
   const name = (document.getElementById('gs_new_name_'+cat).value||'').trim();
   if(!name){ alert('Escribe un nombre.'); return; }
   const amount = parseMoney(document.getElementById('gs_new_amount_'+cat).value);
   if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
- 
+
   if(cat==='ciclicos'){
     const period = parseInt(document.getElementById('gs_new_period_ciclicos').value, 10);
     const date = document.getElementById('gs_new_date_ciclicos').value || null;
@@ -3503,7 +3521,7 @@ async function onGastosAdd(cat){
     await saveGastos(cat);
   } else {
     const isProvision = cat==='fijos' && !!document.getElementById('gs_new_isprovision_fijos') && document.getElementById('gs_new_isprovision_fijos').checked;
-    const newItem = { id:uid(), name, amount, overrides:{}, paidMonths:{} };
+    const newItem = { id:uid(), name, amount, overrides:{}, paidMonths:{}, registros:{} };
     if(isProvision){ newItem.isProvision = true; newItem.transactions = {}; }
     if(cat==='fijos'){
       const dueDayEl = document.getElementById('gs_new_dueday_fijos');
@@ -3518,7 +3536,7 @@ async function onGastosAdd(cat){
     gastosListFor(cat).push(newItem);
     await saveGastos(cat);
   }
- 
+
   document.getElementById('gs_new_name_'+cat).value='';
   const amountEl = document.getElementById('gs_new_amount_'+cat);
   if(amountEl) amountEl.value='';
@@ -3534,7 +3552,7 @@ async function onGastosAdd(cat){
   if(cuotaEl2) cuotaEl2.value='';
   render();
 }
- 
+
 async function onGastosSaveEdit(key){
   const [cat, id] = key.split(':');
   const list = gastosListFor(cat);
@@ -3543,7 +3561,7 @@ async function onGastosSaveEdit(key){
   const name = (document.getElementById('gs_edit_name_'+id).value||'').trim();
   if(!name){ alert('El nombre no puede estar vacío.'); return; }
   item.name = name;
- 
+
   if(cat==='ciclicos'){
     const amount = parseMoney(document.getElementById('gs_edit_amount_'+id).value);
     const period = parseInt(document.getElementById('gs_edit_period_'+id).value, 10);
@@ -3581,12 +3599,12 @@ async function onGastosSaveEdit(key){
       item.cuotaPactada = cuota>0 ? cuota : null;
     }
   }
- 
+
   gastosEditingId = null;
   await saveGastos(cat);
   render();
 }
- 
+
 async function onGastosDelete(key){
   const [cat, id] = key.split(':');
   const list = gastosListFor(cat);
@@ -3596,16 +3614,29 @@ async function onGastosDelete(key){
   await saveGastos(cat);
   render();
 }
- 
+
 async function onGastosToggleStatus(key){
   const [cat, id] = key.split(':');
   const item = gastosListFor(cat).find(x=>x.id===id);
   if(!item) return;
   item.status = item.status==='Pendiente' ? 'Pagado' : 'Pendiente';
+  if(item.status==='Pendiente') item.fechaPago = null;
   await saveGastos(cat);
   render();
 }
- 
+
+async function onGastosRegistrarImprevisto(id){
+  const item = gastosExtraordinarios.find(x=>x.id===id);
+  if(!item) return;
+  const fechaEl = document.getElementById('gs_reg_imprevisto_fecha_'+id);
+  const fecha = (fechaEl && fechaEl.value) ? fechaEl.value : todayStr();
+  item.status = 'Pagado';
+  item.fechaPago = fecha;
+  gastosEditingId = null;
+  await saveGastos('extraordinarios');
+  render();
+}
+
 async function onGastosAplazarImprevisto(id){
   const item = gastosExtraordinarios.find(x=>x.id===id);
   if(!item || !item.date) return;
@@ -3613,7 +3644,7 @@ async function onGastosAplazarImprevisto(id){
   await saveGastos('extraordinarios');
   render();
 }
- 
+
 async function onGastosContribute(id){
   const c = gastosCiclicos.find(x=>x.id===id);
   if(!c) return;
@@ -3631,7 +3662,7 @@ async function onGastosUndoContribute(id){
   await saveGastos('ciclicos');
   render();
 }
- 
+
 async function onGastosMarkPaid(id){
   const c = gastosCiclicos.find(x=>x.id===id);
   if(!c) return;
@@ -3643,12 +3674,12 @@ async function onGastosMarkPaid(id){
   await saveGastos('ciclicos');
   render();
 }
- 
+
 function escapeHtml(s){
   return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function escapeAttr(s){ return escapeHtml(s); }
- 
+
 async function init(){
   document.getElementById('content').innerHTML = '<div class="panel">Cargando...</div>';
   gastosViewMonth = currentMonthStr();
@@ -3656,7 +3687,7 @@ async function init(){
   const changed = reprogramOverdue();
   if(changed) await saveTasks();
   render();
- 
+
   document.addEventListener('focusin', (e)=>{
     const tag = e.target.tagName;
     if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT'){
@@ -3670,4 +3701,3 @@ init();
 </script>
 </body>
 </html>
- 
