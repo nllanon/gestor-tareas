@@ -1328,6 +1328,29 @@ function estaRegistrado(item, mes){
   if(item.registros && item.registros[mes]) return true;
   return !!(item.paidMonths && item.paidMonths[mes]);
 }
+function estaAplazado(item, mes){
+  return !!(item.aplazados && item.aplazados[mes]);
+}
+function fijoArrastre(item, mes){
+  return Number((item.arrastre||{})[mes]||0);
+}
+function fijoMontoDebido(item, mes){
+  return Number(item.amount||0) + fijoArrastre(item, mes);
+}
+function fijoAbonadoParcial(item, mes){
+  return ((item.abonosParciales||{})[mes]||[]).reduce((s,a)=>s+Number(a.monto||0),0);
+}
+function fijoEstadoMes(item, mes){
+  const debido = fijoMontoDebido(item, mes);
+  if(item.registros && item.registros[mes]){
+    return { estado:'pagado', debido, abonado:Number(item.registros[mes].monto), saldo:0, fecha:item.registros[mes].fecha };
+  }
+  const abonado = fijoAbonadoParcial(item, mes);
+  const saldo = debido - abonado;
+  if(saldo<=0) return { estado:'pagado', debido, abonado, saldo:0, fecha:null };
+  if(estaAplazado(item, mes)) return { estado:'aplazado', debido, abonado, saldo };
+  return { estado:'pendiente', debido, abonado, saldo };
+}
 function gastosMonthlyInfo(cat, item, month){
   if(cat==='ciclicos'){
     const plan = Number(item.totalAmount||0)/Math.max(1,Number(item.periodMonths||1));
@@ -1454,9 +1477,17 @@ async function onGastosRegistrarPago(key){
   const montoEl = document.getElementById('gs_reg_monto_'+id);
   const fecha = (fechaEl && fechaEl.value) ? fechaEl.value : todayStr();
   const monto = parseMoney(montoEl.value);
-  if(monto<=0){ alert('El monto debe ser mayor a cero.'); return; }
-  if(!item.registros) item.registros = {};
-  item.registros[gastosViewMonth] = { fecha, monto };
+  if(monto<0){ alert('El monto no puede ser negativo.'); return; }
+
+  if(cat==='fijos'){
+    if(!item.abonosParciales) item.abonosParciales = {};
+    if(!item.abonosParciales[gastosViewMonth]) item.abonosParciales[gastosViewMonth] = [];
+    item.abonosParciales[gastosViewMonth].push({ id:uid(), monto, fecha });
+    if(item.aplazados) delete item.aplazados[gastosViewMonth];
+  } else {
+    if(!item.registros) item.registros = {};
+    item.registros[gastosViewMonth] = { fecha, monto };
+  }
   gastosEditingId = null;
   await saveGastos(cat);
   render();
@@ -1467,6 +1498,30 @@ async function onGastosRegistroQuitar(key){
   if(!item) return;
   if(item.registros) delete item.registros[gastosViewMonth];
   if(item.paidMonths) delete item.paidMonths[gastosViewMonth];
+  if(item.abonosParciales) delete item.abonosParciales[gastosViewMonth];
+  await saveGastos(cat);
+  render();
+}
+async function onGastosAplazarFijo(key){
+  const [cat, id] = key.split(':');
+  const item = gastosListFor(cat).find(x=>x.id===id);
+  if(!item) return;
+  const info = fijoEstadoMes(item, gastosViewMonth);
+  if(info.saldo <= 0) return;
+  const nextMonth = addMonths(gastosViewMonth, 1);
+  if(!item.arrastre) item.arrastre = {};
+  item.arrastre[nextMonth] = (item.arrastre[nextMonth]||0) + info.saldo;
+  if(!item.aplazados) item.aplazados = {};
+  item.aplazados[gastosViewMonth] = true;
+  await saveGastos(cat);
+  render();
+}
+
+async function onGastosQuitarAplazo(key){
+  const [cat, id] = key.split(':');
+  const item = gastosListFor(cat).find(x=>x.id===id);
+  if(!item || !item.aplazados) return;
+  delete item.aplazados[gastosViewMonth];
   await saveGastos(cat);
   render();
 }
@@ -1701,15 +1756,24 @@ function renderGastosTablaCompacta(cat, list){
     }
 
     const info = gastosMonthlyInfo(cat, item, gastosViewMonth);
-    const registrado = estaRegistrado(item, gastosViewMonth);
+    const esFijo = cat==='fijos';
+    const fijoInfo = esFijo ? fijoEstadoMes(item, gastosViewMonth) : null;
+    const registrado = esFijo ? fijoInfo.estado==='pagado' : estaRegistrado(item, gastosViewMonth);
+    const aplazado = esFijo && fijoInfo.estado==='aplazado';
+    const planMostrado = esFijo ? fijoInfo.debido : info.plan;
+    const realMostrado = esFijo ? fijoInfo.abonado : info.real;
+    const saldoMostrado = esFijo ? fijoInfo.saldo : 0;
+
     const isRegistrando = gastosEditingId === ('tablareg:'+key);
     if(isRegistrando){
+      const montoPrellenado = esFijo ? (fijoInfo.saldo>0?fijoInfo.saldo:fijoInfo.debido) : info.plan;
       return `<tr><td colspan="5" style="padding:8px;background:var(--panel);">
         <div class="task-card" style="margin:0;">
+          ${(esFijo && fijoInfo.abonado>0) ? `<div class="task-meta">Ya abonaste ${formatCOP(fijoInfo.abonado)} este mes. Saldo pendiente: ${formatCOP(fijoInfo.saldo)}.</div>` : ''}
           <label>Fecha real</label>
           <input type="date" id="gs_reg_fecha_${item.id}" value="${todayStr()}">
-          <label>Monto real</label>
-          <input type="text" id="gs_reg_monto_${item.id}" value="${info.plan}" inputmode="numeric">
+          <label>Monto ${esFijo?'(completo o parcial)':'real'}</label>
+          <input type="text" id="gs_reg_monto_${item.id}" value="${montoPrellenado}" inputmode="numeric">
           <div class="icon-actions" style="margin-top:8px;">
             ${iconAction('save','save','Guardar', `data-gastos-registrar-pago="${key}"`)}
             ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
@@ -1720,48 +1784,38 @@ function renderGastosTablaCompacta(cat, list){
 
     let estadoHtml;
     if(registrado){
-      estadoHtml = `<span class="money-positive">✅ ${info.fecha||''}</span>`;
+      estadoHtml = `<span class="money-positive">🟢 ${(esFijo?(fijoInfo.fecha||''):(info.fecha||''))}</span>`;
+    } else if(aplazado){
+      estadoHtml = `<span style="color:#a35b00;">🟡 Aplazado${saldoMostrado?` (${formatCOP(saldoMostrado)})`:''}</span>`;
     } else if(item.dueDay && item.dueDay < todayDay){
-      estadoHtml = `<span class="money-negative">🔴 Vencido (día ${item.dueDay})</span>`;
-    } else if(item.dueDay){
-      estadoHtml = `Pendiente (día ${item.dueDay})`;
+      estadoHtml = `<span class="money-negative">🔴 Vencido${item.dueDay?` (día ${item.dueDay})`:''}</span>`;
     } else {
-      estadoHtml = `Pendiente`;
+      estadoHtml = `🔴${(esFijo && realMostrado>0)?` (abonado ${formatCOP(realMostrado)})`:''}`;
     }
 
-    let variacionHtml = '';
+    let accionesHtml;
     if(registrado){
-      const diff = info.real - info.plan;
-      if(diff !== 0){
-        const isIncome = cat==='ingresos';
-        const good = isIncome ? diff>0 : diff<0;
-        variacionHtml = `<div style="font-size:10.5px;margin-top:2px;" class="${good?'money-positive':'money-negative'}">${good?'💚':'🔴'} ${diff>0?'+':''}${formatCOP(diff)} vs. plan</div>`;
-      }
+      accionesHtml = `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-gastos-registro-quitar="${key}" title="Quitar registro">↩️</button>`;
+    } else if(aplazado){
+      accionesHtml = `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-tabla-registrar-open="${key}" title="Registrar">📝</button>
+        <button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-gastos-quitar-aplazo="${key}" title="Quitar aplazo">↩️</button>`;
+    } else {
+      accionesHtml = `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-tabla-registrar-open="${key}" title="Registrar">📝</button>`;
+      if(cat==='fijos') accionesHtml += `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-gastos-aplazar-fijo="${key}" title="Aplazar al mes siguiente">⏭️</button>`;
     }
-    const excedente = excedenteAcumulado(item);
-    if(excedente !== 0){
-      const isIncome = cat==='ingresos';
-      const bueno = isIncome ? excedente < 0 : excedente > 0;
-      variacionHtml += `<div style="font-size:10.5px;margin-top:1px;" class="${bueno?'money-positive':'money-negative'}">${bueno?'🟢':'🟠'} Acum: ${formatCOP(Math.abs(excedente))}</div>`;
-    }
+    accionesHtml += `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-gastos-edit="${key}" title="Editar">✏️</button>`;
 
     return `<tr>
-      <td style="text-align:left;">${escapeHtml(item.name)}${variacionHtml}</td>
-      <td>${formatCOP(info.plan)}</td>
-      <td>${registrado ? formatCOP(info.real) : '—'}</td>
+      <td style="text-align:left;">${escapeHtml(item.name)}</td>
+      <td>${formatCOP(planMostrado)}</td>
+      <td>${registrado || realMostrado>0 ? formatCOP(realMostrado) : '—'}</td>
       <td>${estadoHtml}</td>
-      <td>
-        ${registrado
-          ? `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-registro-quitar="${key}" title="Quitar registro">↩️</button>`
-          : `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-tabla-registrar-open="${key}" title="Registrar">📝</button>`
-        }
-        <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-edit="${key}" title="Editar">✏️</button>
-      </td>
+      <td style="white-space:nowrap;">${accionesHtml}</td>
     </tr>`;
   }).join('');
   return `<div style="overflow-x:auto;">
-    <table class="amort-table">
-      <thead><tr><th>Nombre</th><th>Planeado</th><th>Real/Gastado</th><th>Estado</th><th></th></tr></thead>
+    <table class="amort-table" style="font-size:11px;">
+      <thead><tr><th>Nombre</th><th>Plan</th><th>Real</th><th>Estado</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>`;
@@ -2156,11 +2210,15 @@ function renderGastosDatedTabla(cat, sorted){
     }
     const isVencido = item.status==='Pendiente' && item.date && item.date < todayStr();
     const isRegistrando = gastosEditingId === ('registrarimprevisto:'+item.id);
+    const infoImp = imprevistoEstado(item);
     if(isRegistrando){
       return `<tr><td colspan="5" style="padding:8px;background:var(--panel);">
         <div class="task-card" style="margin:0;">
-          <label>Fecha real de pago</label>
+          ${infoImp.abonado>0 ? `<div class="task-meta">Ya abonaste ${formatCOP(infoImp.abonado)}. Saldo pendiente: ${formatCOP(infoImp.saldo)}.</div>` : ''}
+          <label>Fecha real</label>
           <input type="date" id="gs_reg_imprevisto_fecha_${item.id}" value="${todayStr()}">
+          <label>Monto (completo o parcial)</label>
+          <input type="text" id="gs_reg_imprevisto_monto_${item.id}" value="${infoImp.saldo>0?infoImp.saldo:item.amount}" inputmode="numeric">
           <div class="icon-actions" style="margin-top:8px;">
             ${iconAction('save','save','Guardar', `data-gastos-registrar-imprevisto-save="${item.id}"`)}
             ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
@@ -2170,17 +2228,19 @@ function renderGastosDatedTabla(cat, sorted){
     }
 
     let estadoHtml;
-    if(item.status==='Pagado') estadoHtml = `<span class="money-positive">✅ ${item.fechaPago||''}</span>`;
+    if(infoImp.estado==='pagado') estadoHtml = `<span class="money-positive">🟢 ${item.fechaPago||''}</span>`;
     else if(isVencido) estadoHtml = `<span class="money-negative">🔴 Vencido</span>`;
-    else estadoHtml = `Pendiente`;
+    else estadoHtml = `🔴${infoImp.abonado>0?` (abonado ${formatCOP(infoImp.abonado)})`:''}`;
 
-    let accionesExtra = '';
     let accionBtn;
-    if(item.status==='Pagado'){
-      accionBtn = `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-toggle-status="${key}" title="Reabrir">↩️</button>`;
+    if(infoImp.estado==='pagado'){
+      accionBtn = (item.abonos && item.abonos.length)
+        ? `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-deshacer-abono-imprevisto="${item.id}" title="Deshacer último abono">↩️</button>`
+        : `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-toggle-status="${key}" title="Reabrir">↩️</button>`;
     } else {
       accionBtn = `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-registrar-imprevisto-open="${item.id}" title="Registrar pago">📝</button>
         <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-aplazar-imprevisto="${item.id}" title="Aplazar al mes siguiente">⏭️</button>`;
+      if(item.abonos && item.abonos.length) accionBtn += `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-deshacer-abono-imprevisto="${item.id}" title="Deshacer último abono">↩️</button>`;
     }
 
     return `<tr>
@@ -2404,20 +2464,46 @@ function viewGastosDia(){
   const mesActual = currentMonthStr();
   let html = `<div class="panel"><h2>Pagos por hacer</h2><div class="status-msg">Lo que vence hoy, y todo lo demás que sigue pendiente de pagar o cobrar.</div></div>`;
 
-  const fijosHoy = gastosFijos.filter(i=>!i.isProvision && i.dueDay===todayDay);
   const ciclicosHoy = gastosCiclicos.filter(c=>c.nextDueDate===today);
   const imprevistosHoy = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date===today);
   const esperaVencidosAtras = gastosEspera.filter(e=>e.status==='Pendiente' && e.date && e.date < today && !e.diaPago);
   const esperaHoy = gastosEspera.filter(e=>e.status==='Pendiente' && e.diaPago===todayDay);
 
-  const anyHoy = fijosHoy.length || ciclicosHoy.length || imprevistosHoy.length || esperaHoy.length;
+  // ---------- Pagos Fijos: lista propia, ordenada Pendiente -> Aplazado -> Pagado ----------
+  const fijosOrdenados = gastosFijos.filter(i=>!i.isProvision).map(i=>{
+    const info = fijoEstadoMes(i, mesActual);
+    const orden = info.estado==='pagado' ? 2 : (info.estado==='aplazado' ? 1 : 0);
+    return { item:i, info, orden };
+  }).sort((a,b)=>a.orden-b.orden);
+
+  html += `<div class="panel"><h2>📌 Pagos Fijos</h2>`;
+  if(fijosOrdenados.length===0){
+    html += `<div class="empty">No tienes pagos fijos registrados.</div>`;
+  } else {
+    fijosOrdenados.forEach(({item, info})=>{
+      const circulo = info.estado==='pagado' ? '🟢' : (info.estado==='aplazado' ? '🟡' : '🔴');
+      let estado;
+      if(info.estado==='pagado') estado = `Pagado${info.fecha?' el '+info.fecha:''}`;
+      else if(info.estado==='aplazado') estado = `Aplazado — quedan ${formatCOP(info.saldo)} para el próximo mes`;
+      else estado = (item.dueDay ? `Pendiente (día ${item.dueDay})` : 'Pendiente') + (info.abonado>0?` — abonado ${formatCOP(info.abonado)}`:'');
+      html += `<div class="task-card ${info.estado==='pagado'?'status-terminada':''}">
+        <div class="task-top">
+          <div class="task-name">${circulo} ${escapeHtml(item.name)}</div>
+          <div class="task-name">${formatCOP(info.debido)}</div>
+        </div>
+        <div class="task-meta">${estado}</div>
+      </div>`;
+    });
+  }
+  html += `</div>`;
+
+  const anyHoy = ciclicosHoy.length || imprevistosHoy.length || esperaHoy.length;
   html += `<div class="panel"><h2>🔴 Vence hoy</h2>`;
   if(!anyHoy){
     html += `<div class="empty">Nada vence hoy.</div>`;
   } else {
     let totalHoy = 0;
     let filasHoy = '';
-    fijosHoy.forEach(i=>{ totalHoy+=Number(i.amount||0); filasHoy += renderGastosPendingRow('📌 '+i.name, i.amount, {type:'fijo', id:i.id, month:mesActual}); });
     ciclicosHoy.forEach(c=>{
       const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
       totalHoy += provision;
@@ -2436,19 +2522,17 @@ function viewGastosDia(){
   }
   html += `</div>`;
 
-  const fijosPend = gastosFijos.filter(i=>!i.isProvision && !fijosHoy.includes(i) && !estaRegistrado(i, mesActual));
   const ciclicosPend = gastosCiclicos.filter(c=>!ciclicosHoy.includes(c) && !(c.contributions && c.contributions[mesActual]!==undefined));
   const imprevistosPend = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && !imprevistosHoy.includes(e));
   const esperaPend = gastosEspera.filter(e=>e.status==='Pendiente' && !esperaHoy.includes(e) && deudaSaldoActual('espera', e)>0);
 
-  const anyPend = fijosPend.length || ciclicosPend.length || imprevistosPend.length || esperaPend.length;
+  const anyPend = ciclicosPend.length || imprevistosPend.length || esperaPend.length;
   html += `<div class="panel"><h2>🟡 Otros pendientes</h2>`;
   if(!anyPend){
     html += `<div class="empty">No tienes más pagos pendientes.</div>`;
   } else {
     let totalOtros = 0;
     let filasOtros = '';
-    fijosPend.forEach(i=>{ totalOtros+=Number(i.amount||0); filasOtros += renderGastosPendingRow('📌 '+i.name+(i.dueDay?` (vence el ${i.dueDay})`:''), i.amount, {type:'fijo', id:i.id, month:mesActual}); });
     ciclicosPend.forEach(c=>{
       const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
       totalOtros += provision;
@@ -2514,21 +2598,19 @@ function viewGastosDia(){
   }
   html += `</div>`;
 
-  const fijosPagados = gastosFijos.filter(i=>!i.isProvision && estaRegistrado(i, mesActual));
   const ciclicosPagados = gastosCiclicos.filter(c=>c.contributions && c.contributions[mesActual]!==undefined);
   const imprevistosPagados = gastosExtraordinarios.filter(e=>e.status==='Pagado' && e.date && e.date.slice(0,7)===mesActual);
   const esperaPagados = gastosEspera.filter(e=>e.status==='Pagado');
   const ingresosRecibidos = gastosIngresos.filter(i=>estaRegistrado(i, mesActual));
   const prestamosCobrados = gastosPrestamos.filter(p=>p.status==='Pagado');
 
-  const anyPagado = fijosPagados.length || ciclicosPagados.length || imprevistosPagados.length || esperaPagados.length || ingresosRecibidos.length || prestamosCobrados.length;
+  const anyPagado = ciclicosPagados.length || imprevistosPagados.length || esperaPagados.length || ingresosRecibidos.length || prestamosCobrados.length;
   if(anyPagado){
     html += `<div class="panel"><h2>✅ Ya pagado / cobrado (${monthLabel(mesActual)})</h2>`;
     ingresosRecibidos.forEach(i=>{
       const info = gastosMonthlyInfo('ingresos', i, mesActual);
       html += renderGastosPendingRow('💵 '+i.name, info.real, null, true);
     });
-    fijosPagados.forEach(i=>{ html += renderGastosPendingRow('📌 '+i.name, i.amount, null, true); });
     ciclicosPagados.forEach(c=>{
       const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
       html += renderGastosPendingRow('🐷 '+c.name, provision, null, true);
@@ -3164,6 +3246,9 @@ function bindEvents(){
   document.querySelectorAll('[data-gastos-aplazar-imprevisto]').forEach(b=>{
     b.onclick = ()=>onGastosAplazarImprevisto(b.getAttribute('data-gastos-aplazar-imprevisto'));
   });
+  document.querySelectorAll('[data-gastos-deshacer-abono-imprevisto]').forEach(b=>{
+    b.onclick = ()=>onGastosDeshacerAbonoImprevisto(b.getAttribute('data-gastos-deshacer-abono-imprevisto'));
+  });
   document.querySelectorAll('[data-gastos-contribute]').forEach(b=>{
     b.onclick = ()=>onGastosContribute(b.getAttribute('data-gastos-contribute'));
   });
@@ -3193,6 +3278,12 @@ function bindEvents(){
   });
   document.querySelectorAll('[data-gastos-registro-quitar]').forEach(b=>{
     b.onclick = ()=>onGastosRegistroQuitar(b.getAttribute('data-gastos-registro-quitar'));
+  });
+  document.querySelectorAll('[data-gastos-aplazar-fijo]').forEach(b=>{
+    b.onclick = ()=>onGastosAplazarFijo(b.getAttribute('data-gastos-aplazar-fijo'));
+  });
+  document.querySelectorAll('[data-gastos-quitar-aplazo]').forEach(b=>{
+    b.onclick = ()=>onGastosQuitarAplazo(b.getAttribute('data-gastos-quitar-aplazo'));
   });
   document.querySelectorAll('[data-tabla-registrar-open]').forEach(b=>{
     b.onclick = ()=>{ gastosEditingId = 'tablareg:'+b.getAttribute('data-tabla-registrar-open'); render(); };
@@ -3615,14 +3706,46 @@ async function onGastosToggleStatus(key){
   render();
 }
 
+function imprevistoAbonado(item){
+  return (item.abonos||[]).reduce((s,a)=>s+Number(a.monto||0),0);
+}
+function imprevistoEstado(item){
+  if(item.abonos && item.abonos.length){
+    const abonado = imprevistoAbonado(item);
+    const saldo = Math.max(0, Number(item.amount||0) - abonado);
+    return { estado: saldo<=0?'pagado':'pendiente', abonado, saldo };
+  }
+  if(item.status==='Pagado') return { estado:'pagado', abonado:Number(item.amount||0), saldo:0 };
+  return { estado:'pendiente', abonado:0, saldo:Number(item.amount||0) };
+}
 async function onGastosRegistrarImprevisto(id){
   const item = gastosExtraordinarios.find(x=>x.id===id);
   if(!item) return;
   const fechaEl = document.getElementById('gs_reg_imprevisto_fecha_'+id);
+  const montoEl = document.getElementById('gs_reg_imprevisto_monto_'+id);
   const fecha = (fechaEl && fechaEl.value) ? fechaEl.value : todayStr();
-  item.status = 'Pagado';
-  item.fechaPago = fecha;
+  const monto = parseMoney(montoEl.value);
+  if(monto<0){ alert('El monto no puede ser negativo.'); return; }
+  if(!item.abonos) item.abonos = [];
+  item.abonos.push({ id:uid(), monto, fecha });
+  const info = imprevistoEstado(item);
+  if(info.estado==='pagado'){
+    item.status = 'Pagado';
+    item.fechaPago = fecha;
+  }
   gastosEditingId = null;
+  await saveGastos('extraordinarios');
+  render();
+}
+async function onGastosDeshacerAbonoImprevisto(id){
+  const item = gastosExtraordinarios.find(x=>x.id===id);
+  if(!item || !item.abonos || !item.abonos.length) return;
+  item.abonos.pop();
+  const info = imprevistoEstado(item);
+  if(info.estado!=='pagado'){
+    item.status = 'Pendiente';
+    item.fechaPago = null;
+  }
   await saveGastos('extraordinarios');
   render();
 }
