@@ -1476,11 +1476,16 @@ async function onGastosRegistrarPago(key){
   if(!item) return;
   const fechaEl = document.getElementById('gs_reg_fecha_'+id);
   const montoEl = document.getElementById('gs_reg_monto_'+id);
+  const exentoEl = document.getElementById('gs_reg_exento_'+id);
   const fecha = (fechaEl && fechaEl.value) ? fechaEl.value : todayStr();
   const monto = parseMoney(montoEl.value);
   if(monto<0){ alert('El monto no puede ser negativo.'); return; }
 
-  if(cat==='fijos'){
+  if(cat==='fijos' && exentoEl && exentoEl.checked){
+    if(!item.registros) item.registros = {};
+    item.registros[gastosViewMonth] = { fecha, monto:0 };
+    if(item.aplazados) delete item.aplazados[gastosViewMonth];
+  } else if(cat==='fijos'){
     if(!item.abonosParciales) item.abonosParciales = {};
     if(!item.abonosParciales[gastosViewMonth]) item.abonosParciales[gastosViewMonth] = [];
     item.abonosParciales[gastosViewMonth].push({ id:uid(), monto, fecha });
@@ -1801,6 +1806,7 @@ function renderGastosTablaCompacta(cat, list){
           <input type="date" id="gs_reg_fecha_${item.id}" value="${todayStr()}">
           <label>Monto ${esFijo?'(completo o parcial)':'real'}</label>
           <input type="text" id="gs_reg_monto_${item.id}" value="${montoPrellenado}" inputmode="numeric">
+          ${esFijo ? `<label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:var(--muted);"><input type="checkbox" id="gs_reg_exento_${item.id}" style="width:auto;min-height:auto;"> Este mes no se debe nada (no es un abono, simplemente no aplicó)</label>` : ''}
           <div class="icon-actions" style="margin-top:8px;">
             ${iconAction('save','save','Guardar', `data-gastos-registrar-pago="${key}"`)}
             ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
