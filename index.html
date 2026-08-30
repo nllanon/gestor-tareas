@@ -8,7 +8,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --bg:#f7f7f5;
@@ -159,6 +158,7 @@
   .amort-table th:first-child{text-align:left;}
   .amort-table td{text-align:right;padding:5px 6px;border-bottom:1px solid var(--border);white-space:nowrap;}
   .amort-table td:first-child{text-align:left;font-weight:600;}
+  .compact-table td:first-child, .compact-table th:first-child{max-width:88px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .money-positive{color:var(--accent-dark);}
 </style>
 </head>
@@ -317,65 +317,61 @@ let pendingImportText = '';
 let importConfirmPending = false;
 let importWarnings = [];
 
-// ======================================================
-// CONFIGURACIÓN DE SUPABASE — ya configurado para TareasNico
-// ======================================================
-const SUPABASE_URL = 'https://wfzmpdcxyuskfyjnwmme.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_KGfozOeJvj6vJBzHOTnWVg_wezXkWsH';
-const supabaseClient = (SUPABASE_URL.startsWith('http'))
-  ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : null;
-
-async function kvGet(key){
-  if(!supabaseClient) return null;
-  const { data, error } = await supabaseClient.from('kv_store').select('value').eq('key',key).maybeSingle();
-  if(error) throw error;
-  return data ? data.value : null;
-}
-async function kvSet(key, value){
-  if(!supabaseClient) return;
-  const { error } = await supabaseClient.from('kv_store').upsert({ key, value });
-  if(error) throw error;
-}
-
 async function loadData(){
-  if(!supabaseClient){
-    alert('Falta configurar Supabase: edita SUPABASE_URL y SUPABASE_ANON_KEY en el código.');
-    tasks = []; projects = [];
-    gastosIngresos = []; gastosFijos = []; gastosCiclicos = []; gastosExtraordinarios = []; gastosEspera = []; gastosPrestamos = []; gastosMetas = [];
-    gastosSaldoInicial = {}; gastosMesesCerrados = {};
-    return;
-  }
-  try{ tasks = (await kvGet('tasks')) || []; }catch(e){ console.error('Error cargando tareas', e); tasks = []; }
-  try{ projects = (await kvGet('projects')) || []; }catch(e){ console.error('Error cargando proyectos', e); projects = []; }
-  try{ gastosIngresos = (await kvGet('gastos_ingresos')) || []; }catch(e){ console.error('Error cargando gastos_ingresos', e); gastosIngresos = []; }
-  try{ gastosFijos = (await kvGet('gastos_fijos')) || []; }catch(e){ console.error('Error cargando gastos_fijos', e); gastosFijos = []; }
-  try{ gastosCiclicos = (await kvGet('gastos_ciclicos')) || []; }catch(e){ console.error('Error cargando gastos_ciclicos', e); gastosCiclicos = []; }
-  try{ gastosExtraordinarios = (await kvGet('gastos_extraordinarios')) || []; }catch(e){ console.error('Error cargando gastos_extraordinarios', e); gastosExtraordinarios = []; }
-  try{ gastosEspera = (await kvGet('gastos_espera')) || []; }catch(e){ console.error('Error cargando gastos_espera', e); gastosEspera = []; }
-  try{ gastosPrestamos = (await kvGet('gastos_prestamos')) || []; }catch(e){ console.error('Error cargando gastos_prestamos', e); gastosPrestamos = []; }
-  try{ gastosMetas = (await kvGet('gastos_metas')) || []; }catch(e){ console.error('Error cargando gastos_metas', e); gastosMetas = []; }
   try{
-    const parsed = await kvGet('gastos_saldo');
+    const t = await window.storage.get('tasks');
+    tasks = t ? JSON.parse(t.value) : [];
+  }catch(e){ tasks = []; }
+  try{
+    const p = await window.storage.get('projects');
+    projects = p ? JSON.parse(p.value) : [];
+  }catch(e){ projects = []; }
+  try{
+    const g = await window.storage.get('gastos_ingresos');
+    gastosIngresos = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosIngresos = []; }
+  try{
+    const g = await window.storage.get('gastos_fijos');
+    gastosFijos = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosFijos = []; }
+  try{
+    const g = await window.storage.get('gastos_ciclicos');
+    gastosCiclicos = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosCiclicos = []; }
+  try{
+    const g = await window.storage.get('gastos_extraordinarios');
+    gastosExtraordinarios = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosExtraordinarios = []; }
+  try{
+    const g = await window.storage.get('gastos_espera');
+    gastosEspera = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosEspera = []; }
+  try{
+    const g = await window.storage.get('gastos_prestamos');
+    gastosPrestamos = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosPrestamos = []; }
+  try{
+    const g = await window.storage.get('gastos_metas');
+    gastosMetas = g ? JSON.parse(g.value) : [];
+  }catch(e){ gastosMetas = []; }
+  try{
+    const g = await window.storage.get('gastos_saldo');
+    const parsed = g ? JSON.parse(g.value) : null;
     gastosSaldoInicial = parsed ? (parsed.inicial||{}) : {};
     gastosMesesCerrados = parsed ? (parsed.cerrados||{}) : {};
-  }catch(e){ console.error('Error cargando gastos_saldo', e); gastosSaldoInicial = {}; gastosMesesCerrados = {}; }
+  }catch(e){ gastosSaldoInicial = {}; gastosMesesCerrados = {}; }
 }
 async function saveTasks(){
-  try{ await kvSet('tasks', tasks); }
+  try{ await window.storage.set('tasks', JSON.stringify(tasks)); }
   catch(e){ console.error('Error guardando tareas', e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
 async function saveProjects(){
-  try{ await kvSet('projects', projects); }
+  try{ await window.storage.set('projects', JSON.stringify(projects)); }
   catch(e){ console.error('Error guardando proyectos', e); }
 }
 async function saveGastosSaldo(){
-  try{ await kvSet('gastos_saldo', { inicial: gastosSaldoInicial, cerrados: gastosMesesCerrados }); }
+  try{ await window.storage.set('gastos_saldo', JSON.stringify({ inicial: gastosSaldoInicial, cerrados: gastosMesesCerrados })); }
   catch(e){ console.error('Error guardando saldo', e); alert('No se pudo guardar. Intenta de nuevo.'); }
-}
-async function saveGastosMetas(){
-  try{ await kvSet('gastos_metas', gastosMetas); }
-  catch(e){ console.error('Error guardando metas', e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
 async function saveGastos(cat){
   const map = {
@@ -387,7 +383,7 @@ async function saveGastos(cat){
     prestamos: gastosPrestamos,
     metas: gastosMetas,
   };
-  try{ await kvSet('gastos_'+cat, map[cat]); }
+  try{ await window.storage.set('gastos_'+cat, JSON.stringify(map[cat])); }
   catch(e){ console.error('Error guardando gastos_'+cat, e); alert('No se pudo guardar. Intenta de nuevo.'); }
 }
 
@@ -1576,6 +1572,10 @@ async function onGastosAbonoDelete(key){
   render();
 }
 
+async function saveGastosMetas(){
+  try{ await window.storage.set('gastos_metas', JSON.stringify(gastosMetas)); }
+  catch(e){ console.error('Error guardando metas', e); alert('No se pudo guardar. Intenta de nuevo.'); }
+}
 async function onGastosAddMeta(){
   const name = (document.getElementById('gs_new_name_metas').value||'').trim();
   if(!name){ alert('Escribe un nombre.'); return; }
@@ -1673,6 +1673,23 @@ function viewGastosSimpleList(cat, list, title){
   if(list.length===0){
     html += `<div class="empty">Sin registros.</div>`;
   } else {
+    let totalPendiente=0, totalAplazado=0, totalPagado=0;
+    list.forEach(item=>{
+      if(item.isProvision) return;
+      if(cat==='fijos'){
+        const info = fijoEstadoMes(item, gastosViewMonth);
+        if(info.estado==='pagado') totalPagado += info.abonado;
+        else if(info.estado==='aplazado') totalAplazado += info.saldo;
+        else totalPendiente += info.saldo;
+      } else {
+        const info = gastosMonthlyInfo(cat, item, gastosViewMonth);
+        if(estaRegistrado(item, gastosViewMonth)) totalPagado += info.real;
+        else totalPendiente += info.plan;
+      }
+    });
+    html += `<div class="money-row"><span>🔴 Pendiente</span><span class="money-negative">${formatCOP(totalPendiente)}</span></div>`;
+    if(cat==='fijos') html += `<div class="money-row"><span>🟡 Aplazado</span><span style="color:#a35b00;">${formatCOP(totalAplazado)}</span></div>`;
+    html += `<div class="money-row" style="margin-bottom:8px;"><span>🟢 ${cat==='ingresos'?'Recibido':'Pagado'}</span><span class="money-positive">${formatCOP(totalPagado)}</span></div>`;
     html += renderGastosTablaCompacta(cat, list);
   }
   const total = list.reduce((s,i)=> s + (i.isProvision ? gastosProvisionSpent(i, gastosViewMonth) : Number(i.amount||0)), 0);
@@ -1682,14 +1699,23 @@ function viewGastosSimpleList(cat, list, title){
   return html;
 }
 
+function gastosOrdenKey(cat, item){
+  if(item.isProvision) return 3;
+  if(cat==='fijos'){
+    const info = fijoEstadoMes(item, gastosViewMonth);
+    return info.estado==='pagado' ? 2 : (info.estado==='aplazado' ? 1 : 0);
+  }
+  return estaRegistrado(item, gastosViewMonth) ? 2 : 0;
+}
 function renderGastosTablaCompacta(cat, list){
   const todayDay = new Date().getDate();
-  const rows = list.map(item=>{
+  const listaOrdenada = list.slice().sort((a,b)=>gastosOrdenKey(cat,a)-gastosOrdenKey(cat,b));
+  const rows = listaOrdenada.map(item=>{
     const key = cat+':'+item.id;
     const isFullEditing = gastosEditingId === key;
 
     if(isFullEditing){
-      return `<tr><td colspan="5" style="padding:8px;background:var(--panel);">
+      return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
         <div class="task-card" style="margin:0;">
           <label>Nombre</label>
           <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
@@ -1710,7 +1736,7 @@ function renderGastosTablaCompacta(cat, list){
       const isAdding = gastosEditingId === ('provquick:'+item.id);
       const isViewing = gastosEditingId === ('provview:'+item.id);
       if(isAdding){
-        return `<tr><td colspan="5" style="padding:8px;background:var(--panel);">
+        return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
           <div class="task-card" style="margin:0;">
             <label>Asunto</label>
             <input type="text" id="gs_prov_desc_${item.id}" value="${escapeAttr(item.name)}">
@@ -1727,10 +1753,10 @@ function renderGastosTablaCompacta(cat, list){
       const plan = Number(item.amount||0);
       const disponible = plan - spent;
       const mainRow = `<tr>
-        <td style="text-align:left;">🐖 ${escapeHtml(item.name)} <span style="color:var(--muted);">(provisión)</span></td>
+        <td style="text-align:left;">🐖 ${escapeHtml(item.name)}</td>
         <td>${formatCOP(plan)}</td>
         <td>${formatCOP(spent)}</td>
-        <td class="${disponible>=0?'money-positive':'money-negative'}">Disp: ${formatCOP(disponible)}</td>
+        <td class="${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</td>
         <td>
           <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-provision-open="${item.id}" title="Registrar gasto">📝</button>
           <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-tabla-provision-ver="${item.id}" title="Ver movimientos">👁️</button>
@@ -1750,7 +1776,7 @@ function renderGastosTablaCompacta(cat, list){
               </div>
             </div>
           </div>`).join('') : `<div class="empty">Sin gastos registrados este mes.</div>`;
-        detailRow = `<tr><td colspan="5" style="padding:8px;background:var(--panel);">${txHtml}</td></tr>`;
+        detailRow = `<tr><td colspan="4" style="padding:8px;background:var(--panel);">${txHtml}</td></tr>`;
       }
       return mainRow + detailRow;
     }
@@ -1767,7 +1793,7 @@ function renderGastosTablaCompacta(cat, list){
     const isRegistrando = gastosEditingId === ('tablareg:'+key);
     if(isRegistrando){
       const montoPrellenado = esFijo ? (fijoInfo.saldo>0?fijoInfo.saldo:fijoInfo.debido) : info.plan;
-      return `<tr><td colspan="5" style="padding:8px;background:var(--panel);">
+      return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
         <div class="task-card" style="margin:0;">
           ${(esFijo && fijoInfo.abonado>0) ? `<div class="task-meta">Ya abonaste ${formatCOP(fijoInfo.abonado)} este mes. Saldo pendiente: ${formatCOP(fijoInfo.saldo)}.</div>` : ''}
           <label>Fecha real</label>
@@ -1782,15 +1808,15 @@ function renderGastosTablaCompacta(cat, list){
       </td></tr>`;
     }
 
-    let estadoHtml;
+    let circulo, estadoTexto;
     if(registrado){
-      estadoHtml = `<span class="money-positive">🟢 ${(esFijo?(fijoInfo.fecha||''):(info.fecha||''))}</span>`;
+      circulo = '🟢'; estadoTexto = '';
     } else if(aplazado){
-      estadoHtml = `<span style="color:#a35b00;">🟡 Aplazado${saldoMostrado?` (${formatCOP(saldoMostrado)})`:''}</span>`;
+      circulo = '🟡'; estadoTexto = '';
     } else if(item.dueDay && item.dueDay < todayDay){
-      estadoHtml = `<span class="money-negative">🔴 Vencido${item.dueDay?` (día ${item.dueDay})`:''}</span>`;
+      circulo = '🔴'; estadoTexto = `Vencido${item.dueDay?` (día ${item.dueDay})`:''}`;
     } else {
-      estadoHtml = `🔴${(esFijo && realMostrado>0)?` (abonado ${formatCOP(realMostrado)})`:''}`;
+      circulo = '🔴'; estadoTexto = '';
     }
 
     let accionesHtml;
@@ -1806,16 +1832,16 @@ function renderGastosTablaCompacta(cat, list){
     accionesHtml += `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-gastos-edit="${key}" title="Editar">✏️</button>`;
 
     return `<tr>
-      <td style="text-align:left;">${escapeHtml(item.name)}</td>
-      <td>${formatCOP(planMostrado)}</td>
-      <td>${registrado || realMostrado>0 ? formatCOP(realMostrado) : '—'}</td>
-      <td>${estadoHtml}</td>
+      <td style="text-align:left;">${circulo} ${escapeHtml(item.name)}</td>
+      <td>${formatCOP(planMostrado)}${(registrado || realMostrado>0) ? `<div style="font-size:9.5px;color:var(--muted);font-weight:400;">real: ${formatCOP(realMostrado)}</div>` : ''}</td>
+      <td>${estadoTexto}</td>
       <td style="white-space:nowrap;">${accionesHtml}</td>
     </tr>`;
   }).join('');
-  return `<div style="overflow-x:auto;">
-    <table class="amort-table" style="font-size:11px;">
-      <thead><tr><th>Nombre</th><th>Plan</th><th>Real</th><th>Estado</th><th></th></tr></thead>
+  return `<div class="task-meta" style="text-align:center;margin-bottom:4px;">💡 Si no ves todo, gira el celular</div>
+  <div style="overflow-x:auto;">
+    <table class="amort-table compact-table" style="font-size:11px;">
+      <thead><tr><th>Nombre</th><th>Plan / Real</th><th>Estado</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>`;
@@ -2192,7 +2218,7 @@ function renderGastosDatedTabla(cat, sorted){
     const key = cat+':'+item.id;
     const isEditing = gastosEditingId===key;
     if(isEditing){
-      return `<tr><td colspan="5" style="padding:8px;background:var(--panel);">
+      return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
         <div class="task-card" style="margin:0;">
           <label>Nombre</label>
           <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
@@ -2212,7 +2238,7 @@ function renderGastosDatedTabla(cat, sorted){
     const isRegistrando = gastosEditingId === ('registrarimprevisto:'+item.id);
     const infoImp = imprevistoEstado(item);
     if(isRegistrando){
-      return `<tr><td colspan="5" style="padding:8px;background:var(--panel);">
+      return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
         <div class="task-card" style="margin:0;">
           ${infoImp.abonado>0 ? `<div class="task-meta">Ya abonaste ${formatCOP(infoImp.abonado)}. Saldo pendiente: ${formatCOP(infoImp.saldo)}.</div>` : ''}
           <label>Fecha real</label>
@@ -2253,8 +2279,9 @@ function renderGastosDatedTabla(cat, sorted){
       </td>
     </tr>`;
   }).join('');
-  return `<div style="overflow-x:auto;">
-    <table class="amort-table">
+  return `<div class="task-meta" style="text-align:center;margin-bottom:4px;">💡 Si no ves todo, gira el celular</div>
+  <div style="overflow-x:auto;">
+    <table class="amort-table compact-table">
       <thead><tr><th>Nombre</th><th>Monto</th><th>Estado</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -2652,7 +2679,7 @@ function renderGastosCiclicosTabla(){
     const key = 'ciclicos:'+c.id;
     const isEditing = gastosEditingId===key;
     if(isEditing){
-      return `<tr><td colspan="5" style="padding:8px;background:var(--panel);">
+      return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
         <div class="task-card" style="margin:0;">
           <label>Nombre</label>
           <input type="text" id="gs_edit_name_${c.id}" value="${escapeAttr(c.name)}">
@@ -2687,9 +2714,8 @@ function renderGastosCiclicosTabla(){
     }
 
     return `<tr>
-      <td style="text-align:left;">${escapeHtml(c.name)}<div style="font-size:10.5px;color:var(--muted);margin-top:2px;">Provisión: ${formatCOP(provision)} c/${c.periodMonths}m</div></td>
-      <td>${formatCOP(total)}</td>
-      <td>${formatCOP(acumulado)}</td>
+      <td style="text-align:left;">${escapeHtml(c.name)}</td>
+      <td>${formatCOP(total)}<div style="font-size:9.5px;color:var(--muted);font-weight:400;">acum: ${formatCOP(acumulado)}</div></td>
       <td>${pct}%${completo?' 🎉':(yaAporto?' ✅':'')}</td>
       <td>
         ${accionBtn}
@@ -2697,9 +2723,10 @@ function renderGastosCiclicosTabla(){
       </td>
     </tr>`;
   }).join('');
-  return `<div style="overflow-x:auto;">
-    <table class="amort-table">
-      <thead><tr><th>Nombre</th><th>Total</th><th>Acumulado</th><th>%</th><th></th></tr></thead>
+  return `<div class="task-meta" style="text-align:center;margin-bottom:4px;">💡 Si no ves todo, gira el celular</div>
+  <div style="overflow-x:auto;">
+    <table class="amort-table compact-table">
+      <thead><tr><th>Nombre</th><th>Total / Acum</th><th>%</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </div>`;
