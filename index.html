@@ -1168,7 +1168,7 @@ function viewGastosResumen(){
   const mesCerrado = !!gastosMesesCerrados[gastosViewMonth];
 
   const ingresosPendientes = gastosIngresos.filter(i=>!estaRegistrado(i, gastosViewMonth));
-  const fijosPendientes = gastosFijos.filter(i=>!i.isProvision && !estaRegistrado(i, gastosViewMonth));
+  const fijosPendientes = gastosFijos.filter(i=>!i.isProvision && fijoEstadoMes(i, gastosViewMonth).estado!=='pagado');
   const ciclicosPendientes = gastosCiclicos.filter(c=>!gastosMonthlyInfo('ciclicos',c,gastosViewMonth).confirmed);
 
   let html = renderMonthNav();
@@ -1358,9 +1358,13 @@ function gastosMonthlyInfo(cat, item, month){
     const contrib = (item.contributions && item.contributions[month]!==undefined) ? item.contributions[month] : null;
     return { plan, real: contrib!==null?contrib:plan, confirmed: contrib!==null };
   }
-  if(cat==='fijos' && item.isProvision){
-    const plan = Number(item.amount||0);
-    return { plan, real: gastosProvisionSpent(item, month), confirmed: true };
+  if(cat==='fijos'){
+    if(item.isProvision){
+      const plan = Number(item.amount||0);
+      return { plan, real: gastosProvisionSpent(item, month), confirmed: true };
+    }
+    const info = fijoEstadoMes(item, month);
+    return { plan: info.debido, real: info.abonado, confirmed: info.estado==='pagado', fecha: info.fecha||null };
   }
   const plan = Number(item.amount||0);
   if(item.registros && item.registros[month]){
@@ -1706,16 +1710,21 @@ function viewGastosSimpleList(cat, list, title){
 }
 
 function gastosOrdenKey(cat, item){
-  if(item.isProvision) return 3;
+  const dia = item.dueDay || 32;
+  if(item.isProvision) return [3, dia];
   if(cat==='fijos'){
     const info = fijoEstadoMes(item, gastosViewMonth);
-    return info.estado==='pagado' ? 2 : (info.estado==='aplazado' ? 1 : 0);
+    const estadoOrden = info.estado==='pagado' ? 2 : (info.estado==='aplazado' ? 1 : 0);
+    return [estadoOrden, dia];
   }
-  return estaRegistrado(item, gastosViewMonth) ? 2 : 0;
+  return [estaRegistrado(item, gastosViewMonth) ? 2 : 0, dia];
 }
 function renderGastosTablaCompacta(cat, list){
   const todayDay = new Date().getDate();
-  const listaOrdenada = list.slice().sort((a,b)=>gastosOrdenKey(cat,a)-gastosOrdenKey(cat,b));
+  const listaOrdenada = list.slice().sort((a,b)=>{
+    const ka = gastosOrdenKey(cat,a), kb = gastosOrdenKey(cat,b);
+    return ka[0]-kb[0] || ka[1]-kb[1];
+  });
   const rows = listaOrdenada.map(item=>{
     const key = cat+':'+item.id;
     const isFullEditing = gastosEditingId === key;
@@ -1727,7 +1736,7 @@ function renderGastosTablaCompacta(cat, list){
           <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
           <label>Monto</label>
           <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
-          ${(item.dueDay!==undefined) ? `<label>Día del mes</label>
+          ${(cat==='fijos' || cat==='ingresos') ? `<label>Día del mes ${cat==='ingresos'?'en que lo esperas':'en que vence'} (opcional)</label>
           <input type="text" id="gs_edit_dueday_${item.id}" value="${item.dueDay||''}" inputmode="numeric" maxlength="2" style="max-width:100px;">` : ''}
           <div class="icon-actions" style="margin-top:8px;">
             ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
@@ -2383,7 +2392,13 @@ function getAllMovimientos(){
       const mesesVistos = new Set();
       Object.keys(i.registros||{}).forEach(mes=>{
         const r = i.registros[mes];
-        movimientos.push({fecha:r.fecha||mes, tipo:'Fijo', icono:'📌', nombre:i.name, monto:r.monto, signo:-1});
+        if(Number(r.monto)>0) movimientos.push({fecha:r.fecha||mes, tipo:'Fijo', icono:'📌', nombre:i.name, monto:r.monto, signo:-1});
+        mesesVistos.add(mes);
+      });
+      Object.keys(i.abonosParciales||{}).forEach(mes=>{
+        (i.abonosParciales[mes]||[]).forEach(a=>{
+          movimientos.push({fecha:a.fecha||mes, tipo:'Fijo', icono:'📌', nombre:i.name, monto:a.monto, signo:-1});
+        });
         mesesVistos.add(mes);
       });
       Object.keys(i.paidMonths||{}).forEach(mes=>{
@@ -2507,8 +2522,8 @@ function viewGastosDia(){
   const fijosOrdenados = gastosFijos.filter(i=>!i.isProvision).map(i=>{
     const info = fijoEstadoMes(i, mesActual);
     const orden = info.estado==='pagado' ? 2 : (info.estado==='aplazado' ? 1 : 0);
-    return { item:i, info, orden };
-  }).sort((a,b)=>a.orden-b.orden);
+    return { item:i, info, orden, dia:i.dueDay||32 };
+  }).sort((a,b)=> a.orden-b.orden || a.dia-b.dia);
 
   html += `<div class="panel"><h2>📌 Pagos Fijos</h2>`;
   if(fijosOrdenados.length===0){
