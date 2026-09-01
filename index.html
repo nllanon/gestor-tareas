@@ -1140,6 +1140,15 @@ function computeMonthSummary(mes){
   const totalProvisiones = gastosCiclicos.reduce((s,c)=>s+gastosMonthlyInfo('ciclicos',c,mes).real,0);
   const extraordinariosMes = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date && e.date.slice(0,7)===mes);
   const totalExtraordinarios = extraordinariosMes.reduce((s,e)=>s+Number(e.amount||0),0);
+  const imprevistosPagadosDelMes = gastosExtraordinarios.reduce((s,e)=>{
+    if(e.abonos && e.abonos.length){
+      return s + e.abonos.filter(a=>a.fecha && a.fecha.slice(0,7)===mes).reduce((s2,a)=>s2+Number(a.monto||0),0);
+    }
+    if(e.status==='Pagado' && e.fechaPago && e.fechaPago.slice(0,7)===mes){
+      return s + Number(e.amount||0);
+    }
+    return s;
+  }, 0);
   const today = todayStr();
   const esperaVencidos = gastosEspera.filter(e=>e.status==='Pendiente' && e.date && e.date < today);
   const totalEspera = esperaVencidos.reduce((s,e)=>s+deudaSaldoActual('espera', e),0);
@@ -1150,10 +1159,11 @@ function computeMonthSummary(mes){
   const totalAportesMetas = gastosMetas.reduce((s,m)=>s + (m.aportes||[]).filter(a=>a.date && a.date.slice(0,7)===mes).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
   const aportesAhorrosDelMes = gastosCiclicos.reduce((s,c)=>s + ((c.contributions && c.contributions[mes]!==undefined) ? Number(c.contributions[mes]) : 0), 0);
   const saldoInicial = Number(gastosSaldoInicial[mes]||0);
-  const totalGastos = totalFijos + totalProvisiones + totalExtraordinarios + totalEspera + totalPrestamosSalida + totalAportesMetas;
+  const totalGastos = totalFijos + totalProvisiones + imprevistosPagadosDelMes + abonosDeudaDelMes + totalPrestamosSalida + totalAportesMetas;
   const disponible = saldoInicial + totalIngresos + cobrosDelMes - totalGastos;
   return {
     mes, totalIngresos, totalFijos, totalProvisiones, totalExtraordinarios, totalEspera,
+    imprevistosPagadosDelMes,
     totalPrestamosSalida, cobrosDelMes, totalAportesMetas, aportesAhorrosDelMes, abonosDeudaDelMes,
     saldoInicial, totalGastos, disponible,
     extraordinariosMes, esperaVencidos, prestamosDelMes,
@@ -1162,6 +1172,7 @@ function computeMonthSummary(mes){
 function viewGastosResumen(){
   const s = computeMonthSummary(gastosViewMonth);
   const { totalIngresos, totalFijos, totalProvisiones, totalExtraordinarios, totalEspera,
+    imprevistosPagadosDelMes, abonosDeudaDelMes,
     totalPrestamosSalida, cobrosDelMes, totalAportesMetas, disponible, extraordinariosMes,
     esperaVencidos, prestamosDelMes, saldoInicial } = s;
   const prestamosPendientes = gastosPrestamos.filter(p=>deudaSaldoActual('prestamos', p) > 0);
@@ -1197,8 +1208,11 @@ function viewGastosResumen(){
     <div class="money-row"><span>Ingresos</span><span class="money-positive">${formatCOP(totalIngresos)}</span></div>
     <div class="money-row"><span>Gastos fijos</span><span class="money-negative">-${formatCOP(totalFijos)}</span></div>
     <div class="money-row"><span>Provisiones (cíclicos)</span><span class="money-negative">-${formatCOP(totalProvisiones)}</span></div>
-    <div class="money-row"><span>Imprevistos pendientes (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalExtraordinarios)}</span></div>
-    <div class="money-row"><span>En espera vencidos (hoy)</span><span class="money-negative">-${formatCOP(totalEspera)}</span></div>
+    <div class="money-row"><span>Imprevistos pagados (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(imprevistosPagadosDelMes)}</span></div>
+    <div class="money-row"><span>Abonos a "Lo que debo" (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(abonosDeudaDelMes)}</span></div>
+    <div class="money-row" style="opacity:.7;"><span>Imprevistos pendientes (aún sin pagar)</span><span class="money-negative">-${formatCOP(totalExtraordinarios)}</span></div>
+    <div class="money-row" style="opacity:.7;"><span>En espera vencidos (saldo total, hoy)</span><span class="money-negative">-${formatCOP(totalEspera)}</span></div>
+    <div class="task-meta" style="margin-top:2px;margin-bottom:6px;">Las dos últimas son solo referencia (lo que falta por pagar) — no se restan del disponible, porque ese dinero aún no ha salido.</div>
     <div class="money-row"><span>Préstamos hechos (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalPrestamosSalida)}</span></div>
     <div class="money-row"><span>Cobros de préstamos (${monthLabel(gastosViewMonth)})</span><span class="money-positive">+${formatCOP(cobrosDelMes)}</span></div>
     <div class="money-row"><span>Aportes a metas (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalAportesMetas)}</span></div>
@@ -1373,7 +1387,7 @@ function gastosMonthlyInfo(cat, item, month){
   }
   const ov = (item.overrides && item.overrides[month]!==undefined) ? item.overrides[month] : null;
   const paidLegacy = !!(item.paidMonths && item.paidMonths[month]);
-  return { plan, real: ov!==null?ov:plan, confirmed: paidLegacy, fecha: null };
+  return { plan, real: ov!==null?ov:(paidLegacy?plan:0), confirmed: paidLegacy, fecha: null };
 }
 function gastosSetMonthly(cat, item, month, value){
   if(cat==='ciclicos'){
@@ -2271,7 +2285,7 @@ function renderGastosDatedTabla(cat, sorted){
 
     let estadoHtml;
     if(infoImp.estado==='pagado') estadoHtml = `<span class="money-positive">🟢 ${item.fechaPago||''}</span>`;
-    else if(isVencido) estadoHtml = `<span class="money-negative">🔴 Vencido</span>`;
+    else if(isVencido) estadoHtml = `<span class="money-negative">🔴 Vencido${infoImp.abonado>0?` (abonado ${formatCOP(infoImp.abonado)})`:''}</span>`;
     else estadoHtml = `🔴${infoImp.abonado>0?` (abonado ${formatCOP(infoImp.abonado)})`:''}`;
 
     let accionBtn;
