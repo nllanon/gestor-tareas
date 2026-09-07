@@ -1782,7 +1782,7 @@ function renderGastosTablaCompacta(cat, list){
       const plan = Number(item.amount||0);
       const disponible = plan - spent;
       const mainRow = `<tr>
-        <td style="text-align:left;">🐖 ${escapeHtml(item.name)}</td>
+        <td style="text-align:left;">🐖 ${escapeHtml(item.name)}${item.dueDay?`<div style="font-size:10.5px;color:var(--muted);margin-top:2px;">día ${item.dueDay}</div>`:''}</td>
         <td>${formatCOP(plan)}</td>
         <td>${formatCOP(spent)}</td>
         <td class="${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</td>
@@ -2539,8 +2539,11 @@ function viewGastosDia(){
     return { item:i, info, orden, dia:i.dueDay||32 };
   }).sort((a,b)=> a.orden-b.orden || a.dia-b.dia);
 
+  const provisionesConDia = gastosFijos.filter(i=>i.isProvision && i.dueDay)
+    .sort((a,b)=>(a.dueDay||32)-(b.dueDay||32));
+
   html += `<div class="panel"><h2>📌 Pagos Fijos</h2>`;
-  if(fijosOrdenados.length===0){
+  if(fijosOrdenados.length===0 && provisionesConDia.length===0){
     html += `<div class="empty">No tienes pagos fijos registrados.</div>`;
   } else {
     fijosOrdenados.forEach(({item, info})=>{
@@ -2555,6 +2558,19 @@ function viewGastosDia(){
           <div class="task-name">${formatCOP(info.debido)}</div>
         </div>
         <div class="task-meta">${estado}</div>
+      </div>`;
+    });
+    provisionesConDia.forEach(i=>{
+      const spent = gastosProvisionSpent(i, mesActual);
+      const plan = Number(i.amount||0);
+      const disponible = plan - spent;
+      const esHoy = i.dueDay===todayDay;
+      html += `<div class="task-card">
+        <div class="task-top">
+          <div class="task-name">${esHoy?'🟡':'⚪'} 🐖 ${escapeHtml(i.name)} <span style="color:var(--muted);font-weight:400;font-size:11px;">(día ${i.dueDay})</span></div>
+          <div class="task-name ${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</div>
+        </div>
+        <div class="task-meta">Disponible este mes${esHoy?' — hoy toca revisar':''}</div>
       </div>`;
     });
   }
