@@ -1725,12 +1725,7 @@ function viewGastosSimpleList(cat, list, title){
 
 function gastosOrdenKey(cat, item){
   const dia = item.dueDay || 32;
-  if(item.isProvision) return [3, dia];
-  if(cat==='fijos'){
-    const info = fijoEstadoMes(item, gastosViewMonth);
-    const estadoOrden = info.estado==='pagado' ? 2 : (info.estado==='aplazado' ? 1 : 0);
-    return [estadoOrden, dia];
-  }
+  if(cat==='fijos') return [0, dia];
   return [estaRegistrado(item, gastosViewMonth) ? 2 : 0, dia];
 }
 function renderGastosTablaCompacta(cat, list){
@@ -2533,20 +2528,32 @@ function viewGastosDia(){
   const esperaHoy = gastosEspera.filter(e=>e.status==='Pendiente' && e.diaPago===todayDay);
 
   // ---------- Pagos Fijos: lista propia, ordenada Pendiente -> Aplazado -> Pagado ----------
-  const fijosOrdenados = gastosFijos.filter(i=>!i.isProvision).map(i=>{
-    const info = fijoEstadoMes(i, mesActual);
-    const orden = info.estado==='pagado' ? 2 : (info.estado==='aplazado' ? 1 : 0);
-    return { item:i, info, orden, dia:i.dueDay||32 };
-  }).sort((a,b)=> a.orden-b.orden || a.dia-b.dia);
+  const fijosYProvisiones = gastosFijos.filter(i=>!!i.dueDay).map(i=>{
+    return { item:i, dia:i.dueDay };
+  }).sort((a,b)=>a.dia-b.dia);
+  const fijosSinDia = gastosFijos.filter(i=>!i.isProvision && !i.dueDay).map(i=>({item:i, dia:32}));
+  const todosOrdenados = [...fijosYProvisiones, ...fijosSinDia];
 
-  const provisionesConDia = gastosFijos.filter(i=>i.isProvision && i.dueDay)
-    .sort((a,b)=>(a.dueDay||32)-(b.dueDay||32));
-
-  html += `<div class="panel"><h2>📌 Pagos Fijos</h2>`;
-  if(fijosOrdenados.length===0 && provisionesConDia.length===0){
+  html += `<div class="panel"><h2>📌 Pagos Fijos (por día)</h2>`;
+  if(todosOrdenados.length===0){
     html += `<div class="empty">No tienes pagos fijos registrados.</div>`;
   } else {
-    fijosOrdenados.forEach(({item, info})=>{
+    todosOrdenados.forEach(({item})=>{
+      if(item.isProvision){
+        const spent = gastosProvisionSpent(item, mesActual);
+        const plan = Number(item.amount||0);
+        const disponible = plan - spent;
+        const esHoy = item.dueDay===todayDay;
+        html += `<div class="task-card">
+          <div class="task-top">
+            <div class="task-name">${esHoy?'🟡':'⚪'} 🐖 ${escapeHtml(item.name)} <span style="color:var(--muted);font-weight:400;font-size:11px;">(día ${item.dueDay})</span></div>
+            <div class="task-name ${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</div>
+          </div>
+          <div class="task-meta">Disponible este mes${esHoy?' — hoy toca revisar':''}</div>
+        </div>`;
+        return;
+      }
+      const info = fijoEstadoMes(item, mesActual);
       const circulo = info.estado==='pagado' ? '🟢' : (info.estado==='aplazado' ? '🟡' : '🔴');
       let estado;
       if(info.estado==='pagado') estado = `Pagado${info.fecha?' el '+info.fecha:''}`;
@@ -2558,19 +2565,6 @@ function viewGastosDia(){
           <div class="task-name">${formatCOP(info.debido)}</div>
         </div>
         <div class="task-meta">${estado}</div>
-      </div>`;
-    });
-    provisionesConDia.forEach(i=>{
-      const spent = gastosProvisionSpent(i, mesActual);
-      const plan = Number(i.amount||0);
-      const disponible = plan - spent;
-      const esHoy = i.dueDay===todayDay;
-      html += `<div class="task-card">
-        <div class="task-top">
-          <div class="task-name">${esHoy?'🟡':'⚪'} 🐖 ${escapeHtml(i.name)} <span style="color:var(--muted);font-weight:400;font-size:11px;">(día ${i.dueDay})</span></div>
-          <div class="task-name ${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</div>
-        </div>
-        <div class="task-meta">Disponible este mes${esHoy?' — hoy toca revisar':''}</div>
       </div>`;
     });
   }
