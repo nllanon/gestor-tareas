@@ -1232,13 +1232,9 @@ function viewGastosResumen(){
       <div class="money-row"><span>Provisiones (cíclicos)</span><span class="money-negative">-${formatCOP(totalProvisiones)}</span></div>
       <div class="money-row"><span>Imprevistos pagados (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(imprevistosPagadosDelMes)}</span></div>
       <div class="money-row"><span>Abonos a "Lo que debo" (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(abonosDeudaDelMes)}</span></div>
-      <div class="money-row" style="opacity:.7;"><span>Imprevistos pendientes (aún sin pagar)</span><span class="money-negative">-${formatCOP(totalExtraordinarios)}</span></div>
-      <div class="money-row" style="opacity:.7;"><span>En espera vencidos (saldo total, hoy)</span><span class="money-negative">-${formatCOP(totalEspera)}</span></div>
-      <div class="task-meta" style="margin-top:2px;margin-bottom:6px;">Las dos últimas son solo referencia (lo que falta por pagar) — no se restan del disponible, porque ese dinero aún no ha salido.</div>
       <div class="money-row"><span>Préstamos hechos (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalPrestamosSalida)}</span></div>
       <div class="money-row"><span>Cobros de préstamos (${monthLabel(gastosViewMonth)})</span><span class="money-positive">+${formatCOP(cobrosDelMes)}</span></div>
       <div class="money-row"><span>Aportes a metas (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalAportesMetas)}</span></div>
-      <div class="money-row total"><span>Dinero disponible</span><span class="${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</span></div>
     </div>`;
 
     const historico = ultimosMeses(6);
@@ -1248,8 +1244,6 @@ function viewGastosResumen(){
       <canvas id="chart-disponible" height="160"></canvas>
       <div class="status-msg" style="margin-top:16px;">Ingresos vs. gastos por mes</div>
       <canvas id="chart-ingresos-gastos" height="160"></canvas>
-      <div class="status-msg" style="margin-top:16px;">Distribución del gasto — ${monthLabel(gastosViewMonth)}</div>
-      <canvas id="chart-distribucion" height="200"></canvas>
     </div>`;
 
     if(fijosPendientes.length || ciclicosPendientes.length || extraordinariosMes.length || esperaVencidos.length){
@@ -2422,28 +2416,6 @@ function renderGastosCharts(){
       },
       options: { plugins:{legend:{position:'bottom'}}, scales:{ y:{ ticks:{ callback:v=>formatCOP(v) } } } }
     });
-  }
-
-  const elDist = document.getElementById('chart-distribucion');
-  if(elDist){
-    const actual = resumenes[resumenes.length-1];
-    const dataVals = [actual.totalFijos, actual.totalProvisiones, actual.totalExtraordinarios, actual.totalEspera, actual.totalAportesMetas];
-    const dataLabels = ['Fijos','Ahorros','Imprevistos','Deuda','Metas'];
-    const colores = ['#4285F4','#128C7E','#a35b00','#c5221f','#7c3aed'];
-    const filtrados = dataLabels.map((l,i)=>({l,v:dataVals[i],c:colores[i]})).filter(x=>x.v>0);
-    if(filtrados.length===0){
-      elDist.style.display = 'none';
-    } else {
-      elDist.style.display = '';
-      chartInstances.distribucion = new Chart(elDist, {
-        type: 'doughnut',
-        data: {
-          labels: filtrados.map(x=>x.l),
-          datasets: [{ data: filtrados.map(x=>x.v), backgroundColor: filtrados.map(x=>x.c) }]
-        },
-        options: { plugins:{legend:{position:'bottom'}} }
-      });
-    }
   }
 }
 
