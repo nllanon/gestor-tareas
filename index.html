@@ -2100,7 +2100,8 @@ function viewGastosEspera(){
 }
 
 function metaAportado(meta){
-  return (meta.aportes||[]).reduce((s,a)=>s+Number(a.amount||0),0);
+  const hoy = todayStr();
+  return (meta.aportes||[]).filter(a=>!a.date || a.date<=hoy).reduce((s,a)=>s+Number(a.amount||0),0);
 }
 function metaRitmoInfo(meta){
   const objetivo = Number(meta.montoObjetivo||0);
@@ -3640,7 +3641,7 @@ function bindEvents(){
     b.onclick = ()=>onGastosAbonoDelete(b.getAttribute('data-gastos-abono-delete'));
   });
   document.querySelectorAll('[data-gastos-add-meta]').forEach(b=>{
-    b.onclick = ()=>onGastosAddMeta();
+    b.onclick = ()=>onGastosAddMeta(b.getAttribute('data-gastos-add-meta'));
   });
   document.querySelectorAll('[data-descargar-gastos-excel]').forEach(b=>{
     b.onclick = ()=>exportGastosExcel();
@@ -3654,13 +3655,13 @@ function bindEvents(){
     b.onclick = ()=>onGastosImportCancel();
   });
   document.querySelectorAll('[data-gastos-edit-meta]').forEach(b=>{
-    b.onclick = ()=>{ gastosEditingId = 'metas:'+b.getAttribute('data-gastos-edit-meta'); gastosPendingDeleteId=null; render(); };
+    b.onclick = ()=>{ gastosEditingId = b.getAttribute('data-gastos-edit-meta'); gastosPendingDeleteId=null; render(); };
   });
   document.querySelectorAll('[data-gastos-save-meta]').forEach(b=>{
     b.onclick = ()=>onGastosSaveMeta(b.getAttribute('data-gastos-save-meta'));
   });
   document.querySelectorAll('[data-gastos-delete-meta]').forEach(b=>{
-    b.onclick = ()=>{ gastosPendingDeleteId = 'metas:'+b.getAttribute('data-gastos-delete-meta'); render(); };
+    b.onclick = ()=>{ gastosPendingDeleteId = b.getAttribute('data-gastos-delete-meta'); render(); };
   });
   document.querySelectorAll('[data-gastos-confirm-delete-meta]').forEach(b=>{
     b.onclick = ()=>onGastosDeleteMeta(b.getAttribute('data-gastos-confirm-delete-meta'));
