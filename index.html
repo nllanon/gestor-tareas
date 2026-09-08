@@ -1158,6 +1158,7 @@ function computeMonthSummary(mes){
     extraordinariosMes, esperaVencidos, prestamosDelMes,
   };
 }
+let gastosResumenDetalleAbierto = false;
 function viewGastosResumen(){
   const s = computeMonthSummary(gastosViewMonth);
   const { totalIngresos, totalFijos, totalProvisiones, totalExtraordinarios, totalEspera,
@@ -1173,45 +1174,17 @@ function viewGastosResumen(){
 
   let html = renderMonthNav();
 
-  const isEditingSaldo = gastosEditingId === 'saldo';
-  html += `<div class="panel">
-    <h2>Resumen — ${monthLabel(gastosViewMonth)}</h2>
-    <div class="status-msg">Los valores usan lo que confirmes/ajustes para este mes; lo que no toques usa el plan.</div>`;
-  if(isEditingSaldo){
-    html += `<label>Saldo inicial de este mes</label>
-    <input type="text" id="gs_saldo_input" value="${saldoInicial}" inputmode="numeric">
-    <div class="icon-actions" style="margin-top:8px;">
-      ${iconAction('save','save','Guardar', `data-gastos-save-saldo="1"`)}
-      ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-    </div>`;
-  } else {
-    html += `<div class="money-row">
-      <span>Saldo inicial (del mes anterior)</span>
-      <span style="display:flex;align-items:center;gap:6px;">
-        <span class="${saldoInicial>=0?'money-positive':'money-negative'}">${formatCOP(saldoInicial)}</span>
-        <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:12px;" data-gastos-edit-saldo="1" title="Ajustar saldo inicial">✏️</button>
-      </span>
-    </div>`;
-  }
-  html += `
-    <div class="money-row"><span>Ingresos</span><span class="money-positive">${formatCOP(totalIngresos)}</span></div>
-    <div class="money-row"><span>Gastos fijos</span><span class="money-negative">-${formatCOP(totalFijos)}</span></div>
-    <div class="money-row"><span>Provisiones (cíclicos)</span><span class="money-negative">-${formatCOP(totalProvisiones)}</span></div>
-    <div class="money-row"><span>Imprevistos pagados (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(imprevistosPagadosDelMes)}</span></div>
-    <div class="money-row"><span>Abonos a "Lo que debo" (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(abonosDeudaDelMes)}</span></div>
-    <div class="money-row" style="opacity:.7;"><span>Imprevistos pendientes (aún sin pagar)</span><span class="money-negative">-${formatCOP(totalExtraordinarios)}</span></div>
-    <div class="money-row" style="opacity:.7;"><span>En espera vencidos (saldo total, hoy)</span><span class="money-negative">-${formatCOP(totalEspera)}</span></div>
-    <div class="task-meta" style="margin-top:2px;margin-bottom:6px;">Las dos últimas son solo referencia (lo que falta por pagar) — no se restan del disponible, porque ese dinero aún no ha salido.</div>
-    <div class="money-row"><span>Préstamos hechos (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalPrestamosSalida)}</span></div>
-    <div class="money-row"><span>Cobros de préstamos (${monthLabel(gastosViewMonth)})</span><span class="money-positive">+${formatCOP(cobrosDelMes)}</span></div>
-    <div class="money-row"><span>Aportes a metas (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalAportesMetas)}</span></div>
-    <div class="money-row total"><span>Dinero disponible</span><span class="${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</span></div>
+  // ---------- Disponible: lo primero, grande ----------
+  html += `<div class="panel" style="text-align:center;padding:22px 16px;">
+    <div class="task-meta" style="font-size:13px;">Dinero disponible — ${monthLabel(gastosViewMonth)}</div>
+    <div style="font-size:38px;font-weight:800;margin-top:4px;line-height:1.1;" class="${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</div>
+    ${mesCerrado ? `<div class="task-meta" style="margin-top:6px;">✅ Mes cerrado</div>` : ''}
   </div>`;
 
+  // ---------- Indicadores: siempre visibles ----------
   const pctIngresosDeuda = s.totalIngresos>0 ? Math.round((s.abonosDeudaDelMes/s.totalIngresos)*100) : 0;
   const tasaAhorro = s.totalIngresos>0 ? Math.round((((disponible>0?disponible:0) + s.aportesAhorrosDelMes + s.totalAportesMetas)/s.totalIngresos)*100) : 0;
   html += `<div class="panel">
-    <h2>📊 Indicadores de ${monthLabel(gastosViewMonth)}</h2>
     <div class="money-row">
       <span>% de ingresos que se va en deuda</span>
       <span class="${pctIngresosDeuda>40?'money-negative':'money-positive'}">${pctIngresosDeuda}%</span>
@@ -1224,80 +1197,106 @@ function viewGastosResumen(){
     <div class="task-meta">Incluye lo que te sobró, más lo que aportaste a Ahorros y Metas, sobre tus ingresos totales.</div>
   </div>`;
 
-  const historico = ultimosMeses(6);
+  // ---------- Cerrar mes: siempre visible, es una accion ----------
   html += `<div class="panel">
-    <h2>📈 Tendencias (últimos ${historico.length} meses)</h2>
-    <div class="status-msg">Disponible mes a mes</div>
-    <canvas id="chart-disponible" height="160"></canvas>
-    <div class="status-msg" style="margin-top:16px;">Ingresos vs. gastos por mes</div>
-    <canvas id="chart-ingresos-gastos" height="160"></canvas>
-    <div class="status-msg" style="margin-top:16px;">Distribución del gasto — ${monthLabel(gastosViewMonth)}</div>
-    <canvas id="chart-distribucion" height="200"></canvas>
-  </div>`;
-
-  html += `<div class="panel">
-    ${mesCerrado ? `<div class="status-msg">✅ Este mes está cerrado. Su disponible ya pasó como saldo inicial de ${monthLabel(addMonths(gastosViewMonth,1))}.</div>` : `<div class="status-msg">Cuando termines de revisar este mes, ciérralo para pasar el disponible como saldo inicial de ${monthLabel(addMonths(gastosViewMonth,1))}. No pasa nada solo, tienes que cerrarlo tú.</div>`}
+    ${mesCerrado ? `<div class="status-msg">Su disponible ya pasó como saldo inicial de ${monthLabel(addMonths(gastosViewMonth,1))}.</div>` : `<div class="status-msg">Cuando termines de revisar este mes, ciérralo para pasar el disponible como saldo inicial de ${monthLabel(addMonths(gastosViewMonth,1))}. No pasa nada solo, tienes que cerrarlo tú.</div>`}
     <button type="button" class="${mesCerrado?'secondary':'primary'}" data-gastos-cerrar-mes="1" style="width:100%;">${mesCerrado?'🔒 Volver a cerrar (recalcular)':'🔒 Cerrar '+monthLabel(gastosViewMonth)}</button>
   </div>`;
 
-  if(fijosPendientes.length || ciclicosPendientes.length || extraordinariosMes.length || esperaVencidos.length){
-    let totalPendientePagar = 0;
-    let filasPagar = '';
-    fijosPendientes.forEach(i=>{
-      const info = gastosMonthlyInfo('fijos', i, gastosViewMonth);
-      totalPendientePagar += info.plan;
-      filasPagar += renderGastosPendingRow(i.name, info.plan, {type:'fijo', id:i.id, month:gastosViewMonth});
-    });
-    ciclicosPendientes.forEach(c=>{
-      const info = gastosMonthlyInfo('ciclicos', c, gastosViewMonth);
-      totalPendientePagar += info.plan;
-      filasPagar += renderGastosPendingRow(c.name+' (provisión)', info.plan, {type:'ciclico', id:c.id, month:gastosViewMonth});
-    });
-    extraordinariosMes.forEach(e=>{
-      totalPendientePagar += Number(e.amount||0);
-      filasPagar += renderGastosPendingRow(e.name, e.amount, {type:'imprevisto', id:e.id});
-    });
-    esperaVencidos.forEach(e=>{
-      const saldoE = deudaSaldoActual('espera', e);
-      totalPendientePagar += saldoE;
-      filasPagar += renderGastosPendingRow(e.name+' (vencido desde '+e.date+')', saldoE, {type:'espera', id:e.id});
-    });
-    html += `<div class="panel"><h2>🔔 Pendiente por pagar</h2>
-      <div class="money-row total"><span>Total pendiente</span><span class="money-negative">${formatCOP(totalPendientePagar)}</span></div>
-      ${filasPagar}</div>`;
-  }
-  if(ingresosPendientes.length || prestamosPendientes.length){
-    let totalPendienteCobrar = 0;
-    let filasCobrar = '';
-    ingresosPendientes.forEach(i=>{
-      const info = gastosMonthlyInfo('ingresos', i, gastosViewMonth);
-      totalPendienteCobrar += info.plan;
-      filasCobrar += renderGastosPendingRow(i.name, info.plan, {type:'ingreso', id:i.id, month:gastosViewMonth});
-    });
-    prestamosPendientes.forEach(p=>{
-      const saldoP = deudaSaldoActual('prestamos', p);
-      totalPendienteCobrar += saldoP;
-      filasCobrar += renderGastosPendingRow(p.name+' (préstamo)', saldoP, {type:'prestamo', id:p.id});
-    });
-    html += `<div class="panel"><h2>🔔 Pendiente por cobrar</h2>
-      <div class="money-row total"><span>Total pendiente</span><span class="money-positive">${formatCOP(totalPendienteCobrar)}</span></div>
-      ${filasCobrar}</div>`;
+  // ---------- Todo lo demas: plegado ----------
+  html += `<button type="button" class="secondary" data-gastos-resumen-toggle-detalle="1" style="width:100%;">${gastosResumenDetalleAbierto?'▾ Ocultar desglose y gráficas':'▸ Ver desglose completo y gráficas'}</button>`;
+
+  if(gastosResumenDetalleAbierto){
+    const isEditingSaldo = gastosEditingId === 'saldo';
+    html += `<div class="panel">
+      <div class="status-msg">Los valores usan lo que confirmes/ajustes para este mes; lo que no toques usa el plan.</div>`;
+    if(isEditingSaldo){
+      html += `<label>Saldo inicial de este mes</label>
+      <input type="text" id="gs_saldo_input" value="${saldoInicial}" inputmode="numeric">
+      <div class="icon-actions" style="margin-top:8px;">
+        ${iconAction('save','save','Guardar', `data-gastos-save-saldo="1"`)}
+        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+      </div>`;
+    } else {
+      html += `<div class="money-row">
+        <span>Saldo inicial (del mes anterior)</span>
+        <span style="display:flex;align-items:center;gap:6px;">
+          <span class="${saldoInicial>=0?'money-positive':'money-negative'}">${formatCOP(saldoInicial)}</span>
+          <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:12px;" data-gastos-edit-saldo="1" title="Ajustar saldo inicial">✏️</button>
+        </span>
+      </div>`;
+    }
+    html += `
+      <div class="money-row"><span>Ingresos</span><span class="money-positive">${formatCOP(totalIngresos)}</span></div>
+      <div class="money-row"><span>Gastos fijos</span><span class="money-negative">-${formatCOP(totalFijos)}</span></div>
+      <div class="money-row"><span>Provisiones (cíclicos)</span><span class="money-negative">-${formatCOP(totalProvisiones)}</span></div>
+      <div class="money-row"><span>Imprevistos pagados (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(imprevistosPagadosDelMes)}</span></div>
+      <div class="money-row"><span>Abonos a "Lo que debo" (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(abonosDeudaDelMes)}</span></div>
+      <div class="money-row" style="opacity:.7;"><span>Imprevistos pendientes (aún sin pagar)</span><span class="money-negative">-${formatCOP(totalExtraordinarios)}</span></div>
+      <div class="money-row" style="opacity:.7;"><span>En espera vencidos (saldo total, hoy)</span><span class="money-negative">-${formatCOP(totalEspera)}</span></div>
+      <div class="task-meta" style="margin-top:2px;margin-bottom:6px;">Las dos últimas son solo referencia (lo que falta por pagar) — no se restan del disponible, porque ese dinero aún no ha salido.</div>
+      <div class="money-row"><span>Préstamos hechos (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalPrestamosSalida)}</span></div>
+      <div class="money-row"><span>Cobros de préstamos (${monthLabel(gastosViewMonth)})</span><span class="money-positive">+${formatCOP(cobrosDelMes)}</span></div>
+      <div class="money-row"><span>Aportes a metas (${monthLabel(gastosViewMonth)})</span><span class="money-negative">-${formatCOP(totalAportesMetas)}</span></div>
+      <div class="money-row total"><span>Dinero disponible</span><span class="${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</span></div>
+    </div>`;
+
+    const historico = ultimosMeses(6);
+    html += `<div class="panel">
+      <h2>📈 Tendencias (últimos ${historico.length} meses)</h2>
+      <div class="status-msg">Disponible mes a mes</div>
+      <canvas id="chart-disponible" height="160"></canvas>
+      <div class="status-msg" style="margin-top:16px;">Ingresos vs. gastos por mes</div>
+      <canvas id="chart-ingresos-gastos" height="160"></canvas>
+      <div class="status-msg" style="margin-top:16px;">Distribución del gasto — ${monthLabel(gastosViewMonth)}</div>
+      <canvas id="chart-distribucion" height="200"></canvas>
+    </div>`;
+
+    if(fijosPendientes.length || ciclicosPendientes.length || extraordinariosMes.length || esperaVencidos.length){
+      let totalPendientePagar = 0;
+      let filasPagar = '';
+      fijosPendientes.forEach(i=>{
+        const info = gastosMonthlyInfo('fijos', i, gastosViewMonth);
+        totalPendientePagar += info.plan;
+        filasPagar += renderGastosPendingRow(i.name, info.plan, null);
+      });
+      ciclicosPendientes.forEach(c=>{
+        const info = gastosMonthlyInfo('ciclicos', c, gastosViewMonth);
+        totalPendientePagar += info.plan;
+        filasPagar += renderGastosPendingRow(c.name+' (provisión)', info.plan, null);
+      });
+      extraordinariosMes.forEach(e=>{
+        totalPendientePagar += Number(e.amount||0);
+        filasPagar += renderGastosPendingRow(e.name, e.amount, null);
+      });
+      esperaVencidos.forEach(e=>{
+        const saldoE = deudaSaldoActual('espera', e);
+        totalPendientePagar += saldoE;
+        filasPagar += renderGastosPendingRow(e.name+' (vencido desde '+e.date+')', saldoE, null);
+      });
+      html += `<div class="panel"><h2>🔔 Pendiente por pagar</h2>
+        <div class="money-row total"><span>Total pendiente</span><span class="money-negative">${formatCOP(totalPendientePagar)}</span></div>
+        ${filasPagar}</div>`;
+    }
+    if(ingresosPendientes.length || prestamosPendientes.length){
+      let totalPendienteCobrar = 0;
+      let filasCobrar = '';
+      ingresosPendientes.forEach(i=>{
+        const info = gastosMonthlyInfo('ingresos', i, gastosViewMonth);
+        totalPendienteCobrar += info.plan;
+        filasCobrar += renderGastosPendingRow(i.name, info.plan, null);
+      });
+      prestamosPendientes.forEach(p=>{
+        const saldoP = deudaSaldoActual('prestamos', p);
+        totalPendienteCobrar += saldoP;
+        filasCobrar += renderGastosPendingRow(p.name+' (préstamo)', saldoP, null);
+      });
+      html += `<div class="panel"><h2>🔔 Pendiente por cobrar</h2>
+        <div class="money-row total"><span>Total pendiente</span><span class="money-positive">${formatCOP(totalPendienteCobrar)}</span></div>
+        ${filasCobrar}</div>`;
+    }
   }
 
-  if(extraordinariosMes.length){
-    html += `<div class="panel"><h2>Imprevistos de ${monthLabel(gastosViewMonth)}</h2>`;
-    extraordinariosMes.forEach(e=>{
-      html += `<div class="task-card"><div class="task-top"><div class="task-name">${escapeHtml(e.name)}</div><div class="task-name">${formatCOP(e.amount)}</div></div></div>`;
-    });
-    html += `</div>`;
-  }
-  if(esperaVencidos.length){
-    html += `<div class="panel"><h2>En espera vencidos</h2>`;
-    esperaVencidos.forEach(e=>{
-      html += `<div class="task-card status-organizar"><div class="task-top"><div class="task-name">${escapeHtml(e.name)}</div><div class="task-name">${formatCOP(e.amount)}</div></div><div class="task-meta">Vencido: ${e.date}</div></div>`;
-    });
-    html += `</div>`;
-  }
   return html;
 }
 
@@ -3422,6 +3421,9 @@ function bindEvents(){
   });
   document.querySelectorAll('[data-gastos-cerrar-mes]').forEach(b=>{
     b.onclick = ()=>onGastosCerrarMes();
+  });
+  document.querySelectorAll('[data-gastos-resumen-toggle-detalle]').forEach(b=>{
+    b.onclick = ()=>{ gastosResumenDetalleAbierto = !gastosResumenDetalleAbierto; render(); };
   });
 }
 
