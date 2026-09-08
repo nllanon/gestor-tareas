@@ -1738,6 +1738,18 @@ function renderGastosTablaCompacta(cat, list){
     const isFullEditing = gastosEditingId === key;
 
     if(isFullEditing){
+      const isConfirmingDelete = gastosPendingDeleteId === key;
+      if(isConfirmingDelete){
+        return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
+          <div class="task-card" style="margin:0;">
+            <div class="task-meta" style="margin-bottom:8px;">⚠️ ¿Eliminar "${escapeHtml(item.name)}"? Esta acción no se puede deshacer.</div>
+            <div class="icon-actions">
+              ${iconAction('complete','check','Sí, eliminar', `data-gastos-confirm-delete="${key}"`)}
+              ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`)}
+            </div>
+          </div>
+        </td></tr>`;
+      }
       return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
         <div class="task-card" style="margin:0;">
           <label>Nombre</label>
@@ -1946,7 +1958,9 @@ function viewGastosEspera(){
   let html = `<div class="panel">
     <h2>Lo que debo</h2>
     <div class="status-msg">Registra el valor total y ve haciendo abonos — el saldo baja solo hasta llegar a $0, donde se marca pagado automáticamente. Si la deuda tiene interés, agrégalo para ver la tabla mes a mes.</div>
-    <div class="row">
+    <button type="button" class="secondary" data-gastos-toggle-form="espera" style="width:100%;">${gastosFormAbierto.espera?'✕ Cerrar':'➕ Agregar deuda'}</button>
+    ${gastosFormAbierto.espera ? `
+    <div class="row" style="margin-top:8px;">
       <div><input type="text" id="gs_new_name_espera" placeholder="Nombre"></div>
       <div><input type="text" id="gs_new_amount_espera" placeholder="Monto total" inputmode="numeric"></div>
     </div>
@@ -1958,12 +1972,20 @@ function viewGastosEspera(){
     <input type="text" id="gs_new_cuota_espera" placeholder="Ej. 500000" inputmode="numeric">
     <label>Día del mes en que la pagas (opcional, ej. 5)</label>
     <input type="text" id="gs_new_diapago_espera" inputmode="numeric" placeholder="1-31" maxlength="2" style="max-width:100px;">
-    <button type="button" class="primary" data-gastos-add="espera" style="width:100%;margin-top:8px;">➤ Agregar</button>
+    <button type="button" class="primary" data-gastos-add="espera" style="width:100%;margin-top:8px;">➤ Agregar</button>` : ''}
   </div>`;
   html += `<div class="panel">`;
-  const sorted = gastosEspera.slice().sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
-  if(sorted.length===0) html += `<div class="empty">Sin registros.</div>`;
-  sorted.forEach(item=>{ html += renderGastosDeudaItem('espera', item, LABELS_ESPERA); });
+  const sorted = gastosEspera.slice().sort((a,b)=>{
+    const pa = deudaSaldoActual('espera',a)<=0 ? 1 : 0;
+    const pb = deudaSaldoActual('espera',b)<=0 ? 1 : 0;
+    if(pa!==pb) return pa-pb;
+    return (a.date||'9999').localeCompare(b.date||'9999');
+  });
+  if(sorted.length===0){
+    html += `<div class="empty">Sin registros.</div>`;
+  } else {
+    html += renderGastosDeudaTabla('espera', sorted, LABELS_ESPERA);
+  }
   html += `</div>`;
   return html;
 }
@@ -1992,101 +2014,116 @@ function viewGastosMetas(){
   let html = `<div class="panel">
     <h2>Metas</h2>
     <div class="status-msg">Cada aporte que registres resta de tu disponible ese mes (como un ahorro que apartas). La app te dice si vas adelantado o atrasado según el tiempo que falta para la fecha límite.</div>
-    <div class="row">
+    <button type="button" class="secondary" data-gastos-toggle-form="metas" style="width:100%;">${gastosFormAbierto.metas?'✕ Cerrar':'➕ Agregar meta'}</button>
+    ${gastosFormAbierto.metas ? `
+    <div class="row" style="margin-top:8px;">
       <div><input type="text" id="gs_new_name_metas" placeholder="Nombre (ej. Universidad Simón)"></div>
       <div><input type="text" id="gs_new_amount_metas" placeholder="Monto objetivo" inputmode="numeric"></div>
     </div>
     <label>Fecha límite</label>
     <input type="date" id="gs_new_fecha_metas">
-    <button type="button" class="primary" data-gastos-add-meta="1" style="width:100%;margin-top:8px;">➤ Agregar meta</button>
+    <button type="button" class="primary" data-gastos-add-meta="1" style="width:100%;margin-top:8px;">➤ Agregar meta</button>` : ''}
   </div>`;
   html += `<div class="panel">`;
   const sorted = gastosMetas.slice().sort((a,b)=>(a.fechaLimite||'9999').localeCompare(b.fechaLimite||'9999'));
-  if(sorted.length===0) html += `<div class="empty">Sin metas registradas.</div>`;
-  sorted.forEach(meta=>{ html += renderGastosMetaItem(meta); });
+  if(sorted.length===0){
+    html += `<div class="empty">Sin metas registradas.</div>`;
+  } else {
+    html += renderGastosMetasTabla(sorted);
+  }
   html += `</div>`;
   return html;
 }
-function renderGastosMetaItem(meta){
-  const key = 'metas:'+meta.id;
-  const isEditing = gastosEditingId===key;
-  const isConfirmingDelete = gastosPendingDeleteId===key;
-  const isAportando = gastosEditingId === ('aportemeta:'+meta.id);
-
-  if(isEditing){
-    return `<div class="task-card">
-      <label>Nombre</label>
-      <input type="text" id="gs_edit_name_${meta.id}" value="${escapeAttr(meta.name)}">
-      <label>Monto objetivo</label>
-      <input type="text" id="gs_edit_amount_${meta.id}" value="${meta.montoObjetivo}" inputmode="numeric">
-      <label>Fecha límite</label>
-      <input type="date" id="gs_edit_fecha_${meta.id}" value="${meta.fechaLimite||''}">
-      <div class="icon-actions" style="margin-top:8px;">
-        ${iconAction('save','save','Guardar', `data-gastos-save-meta="${meta.id}"`)}
-        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-      </div>
-    </div>`;
-  }
-
-  const info = metaRitmoInfo(meta);
-  const completa = info.pct >= 100;
-  const aportes = (meta.aportes||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-
-  let actions;
-  if(isConfirmingDelete){
-    actions = iconAction('complete','check','Confirmar', `data-gastos-confirm-delete-meta="${meta.id}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`);
-  } else {
-    actions = iconAction('edit','edit','Editar', `data-gastos-edit-meta="${meta.id}"`);
-    if(!completa) actions += `<button type="button" class="icon-btn" title="Registrar aporte" aria-label="Registrar aporte" data-meta-aporte-open="${meta.id}">💰</button>`;
-    actions += `<button type="button" class="icon-btn" title="Eliminar" aria-label="Eliminar" data-gastos-delete-meta="${meta.id}">🗑️</button>`;
-  }
-
-  const aporteFormHtml = isAportando ? `
-    <div style="margin-top:8px;">
-      <label>Monto del aporte</label>
-      <input type="text" id="gs_meta_amount_${meta.id}" placeholder="Monto" inputmode="numeric">
-      <label>Fecha</label>
-      <input type="date" id="gs_meta_date_${meta.id}" value="${todayStr()}">
-      <div class="icon-actions" style="margin-top:8px;">
-        ${iconAction('save','save','Agregar', `data-meta-aporte-add="${meta.id}"`)}
-        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-      </div>
-    </div>` : '';
-
-  const aportesListHtml = aportes.length ? aportes.map(a=>`
-    <div class="task-card" style="padding:8px 10px;">
-      <div class="task-top">
-        <div class="task-name" style="font-size:12.5px;">${a.date}</div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div class="task-name" style="font-size:12.5px;">${formatCOP(a.amount)}</div>
-          <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:12px;" data-meta-aporte-delete="${meta.id}:${a.id}" title="Eliminar">🗑️</button>
+function renderGastosMetasTabla(sorted){
+  const rows = sorted.map(meta=>{
+    const key = 'metas:'+meta.id;
+    const isEditing = gastosEditingId===key;
+    if(isEditing){
+      const isConfirmingDelete = gastosPendingDeleteId === key;
+      if(isConfirmingDelete){
+        return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
+          <div class="task-card" style="margin:0;">
+            <div class="task-meta" style="margin-bottom:8px;">⚠️ ¿Eliminar la meta "${escapeHtml(meta.name)}"? Esta acción no se puede deshacer.</div>
+            <div class="icon-actions">
+              ${iconAction('complete','check','Sí, eliminar', `data-gastos-confirm-delete-meta="${meta.id}"`)}
+              ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`)}
+            </div>
+          </div>
+        </td></tr>`;
+      }
+      return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
+        <div class="task-card" style="margin:0;">
+          <label>Nombre</label>
+          <input type="text" id="gs_edit_name_${meta.id}" value="${escapeAttr(meta.name)}">
+          <label>Monto objetivo</label>
+          <input type="text" id="gs_edit_amount_${meta.id}" value="${meta.montoObjetivo}" inputmode="numeric">
+          <label>Fecha límite</label>
+          <input type="date" id="gs_edit_fecha_${meta.id}" value="${meta.fechaLimite||''}">
+          <div class="icon-actions" style="margin-top:8px;">
+            ${iconAction('save','save','Guardar', `data-gastos-save-meta="${meta.id}"`)}
+            ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+            ${iconAction('delete','trash','Eliminar', `data-gastos-delete-meta="${meta.id}"`)}
+          </div>
         </div>
-      </div>
-    </div>`).join('') : '';
-
-  let ritmoHtml = '';
-  if(info.esperado !== null){
-    const vaBien = info.diferencia >= 0;
-    ritmoHtml = `<div class="task-meta" style="margin-top:2px;"><span class="${vaBien?'money-positive':'money-negative'}">${vaBien?'🟢 Vas adelantado':'🟠 Vas atrasado'} ${formatCOP(Math.abs(info.diferencia))} (deberías llevar ${formatCOP(info.esperado)} a estas alturas)</span></div>`;
-  }
-
-  return `<div class="task-card ${completa?'status-terminada':'status-sin-iniciar'}">
-    <div class="task-top">
-      <div>
-        <div class="task-name">${escapeHtml(meta.name)}</div>
-        <div class="task-meta">
-          <span class="badge ${completa?'status-terminada':'status-sin-iniciar'}">${completa?'Meta cumplida':'En curso'}</span>
-          ${meta.fechaLimite?`<span>hasta ${meta.fechaLimite}</span>`:''}
+      </td></tr>`;
+    }
+    const isAportando = gastosEditingId === ('aportemeta:'+meta.id);
+    if(isAportando){
+      return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
+        <div class="task-card" style="margin:0;">
+          <label>Monto del aporte</label>
+          <input type="text" id="gs_meta_amount_${meta.id}" placeholder="Monto" inputmode="numeric">
+          <label>Fecha</label>
+          <input type="date" id="gs_meta_date_${meta.id}" value="${todayStr()}">
+          <div class="icon-actions" style="margin-top:8px;">
+            ${iconAction('save','save','Agregar', `data-meta-aporte-add="${meta.id}"`)}
+            ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+          </div>
         </div>
-      </div>
-      <div class="task-name">${formatCOP(info.objetivo)}</div>
-    </div>
-    <div class="progress-track"><div class="progress-fill" style="width:${info.pct}%;"></div></div>
-    <div class="task-meta" style="margin-top:4px;">Llevas: ${formatCOP(info.aportado)} de ${formatCOP(info.objetivo)} (${info.pct}%)</div>
-    ${ritmoHtml}
-    <div class="icon-actions" style="margin-top:8px;">${actions}</div>
-    ${aporteFormHtml}
-    ${aportesListHtml ? `<div style="margin-top:8px;">${aportesListHtml}</div>` : ''}
+      </td></tr>`;
+    }
+    const isViendo = gastosEditingId === ('vermeta:'+meta.id);
+    const info = metaRitmoInfo(meta);
+    const completa = info.pct >= 100;
+    let detailRow = '';
+    if(isViendo){
+      const aportes = (meta.aportes||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+      let ritmoHtml = '';
+      if(info.esperado !== null){
+        const vaBien = info.diferencia >= 0;
+        ritmoHtml = `<div class="task-meta" style="margin-bottom:6px;"><span class="${vaBien?'money-positive':'money-negative'}">${vaBien?'🟢 Vas adelantado':'🟠 Vas atrasado'} ${formatCOP(Math.abs(info.diferencia))} (deberías llevar ${formatCOP(info.esperado)})</span></div>`;
+      }
+      const aportesHtml = aportes.length ? aportes.map(a=>`
+        <div class="task-card" style="padding:6px 8px;margin-bottom:4px;">
+          <div class="task-top">
+            <div class="task-name" style="font-size:12px;">${a.date}</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <div class="task-name" style="font-size:12px;">${formatCOP(a.amount)}</div>
+              <button type="button" class="icon-btn" style="width:24px;height:24px;font-size:10px;" data-meta-aporte-delete="${meta.id}:${a.id}" title="Eliminar">🗑️</button>
+            </div>
+          </div>
+        </div>`).join('') : `<div class="empty">Sin aportes todavía.</div>`;
+      detailRow = `<tr><td colspan="4" style="padding:8px;background:var(--panel);">${ritmoHtml}${aportesHtml}</td></tr>`;
+    }
+
+    let accionesHtml = `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-gastos-toggle-ver="vermeta:${meta.id}" title="Ver aportes">👁️</button>`;
+    if(!completa) accionesHtml += `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-meta-aporte-open="${meta.id}" title="Registrar aporte">💰</button>`;
+    accionesHtml += `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-gastos-edit-meta="${meta.id}" title="Editar">✏️</button>`;
+
+    const mainRow = `<tr>
+      <td style="text-align:left;">${completa?'🟢':'🔴'} ${escapeHtml(meta.name)}</td>
+      <td>${formatCOP(info.objetivo)}<div style="font-size:9.5px;color:var(--muted);font-weight:400;">llevas: ${formatCOP(info.aportado)}</div></td>
+      <td>${info.pct}%</td>
+      <td style="white-space:nowrap;">${accionesHtml}</td>
+    </tr>`;
+    return mainRow + detailRow;
+  }).join('');
+  return `<div class="task-meta" style="text-align:center;margin-bottom:4px;">💡 Si no ves todo, gira el celular</div>
+  <div style="overflow-x:auto;">
+    <table class="amort-table compact-table">
+      <thead><tr><th>Nombre</th><th>Objetivo</th><th>%</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
   </div>`;
 }
 
@@ -2094,7 +2131,9 @@ function viewGastosPrestamos(){
   let html = `<div class="panel">
     <h2>Lo que me deben</h2>
     <div class="status-msg">Al registrar el préstamo, sale de tu disponible ese mes. Cada cobro que registres entra como si fuera un ingreso. Al llegar a $0 se marca pagado solo.</div>
-    <div class="row">
+    <button type="button" class="secondary" data-gastos-toggle-form="prestamos" style="width:100%;">${gastosFormAbierto.prestamos?'✕ Cerrar':'➕ Agregar préstamo'}</button>
+    ${gastosFormAbierto.prestamos ? `
+    <div class="row" style="margin-top:8px;">
       <div><input type="text" id="gs_new_name_prestamos" placeholder="Nombre (a quién le prestas)"></div>
       <div><input type="text" id="gs_new_amount_prestamos" placeholder="Monto prestado" inputmode="numeric"></div>
     </div>
@@ -2104,116 +2143,134 @@ function viewGastosPrestamos(){
     <input type="text" id="gs_new_tasa_prestamos" placeholder="Ej. 2 o 1.5 (% mensual)" inputmode="decimal">
     <label>Día del mes en que te lo pagan (opcional, ej. 5)</label>
     <input type="text" id="gs_new_diapago_prestamos" inputmode="numeric" placeholder="1-31" maxlength="2" style="max-width:100px;">
-    <button type="button" class="primary" data-gastos-add="prestamos" style="width:100%;margin-top:8px;">➤ Agregar</button>
+    <button type="button" class="primary" data-gastos-add="prestamos" style="width:100%;margin-top:8px;">➤ Agregar</button>` : ''}
   </div>`;
   html += `<div class="panel">`;
-  const sorted = gastosPrestamos.slice().sort((a,b)=>(a.date||'9999').localeCompare(b.date||'9999'));
-  if(sorted.length===0) html += `<div class="empty">Sin préstamos registrados.</div>`;
-  sorted.forEach(item=>{ html += renderGastosDeudaItem('prestamos', item, LABELS_PRESTAMOS); });
+  const sorted = gastosPrestamos.slice().sort((a,b)=>{
+    const pa = deudaSaldoActual('prestamos',a)<=0 ? 1 : 0;
+    const pb = deudaSaldoActual('prestamos',b)<=0 ? 1 : 0;
+    if(pa!==pb) return pa-pb;
+    return (a.date||'9999').localeCompare(b.date||'9999');
+  });
+  if(sorted.length===0){
+    html += `<div class="empty">Sin préstamos registrados.</div>`;
+  } else {
+    html += renderGastosDeudaTabla('prestamos', sorted, LABELS_PRESTAMOS);
+  }
   html += `</div>`;
   return html;
 }
 
-function renderGastosDeudaItem(cat, item, labels){
-  const key = cat+':'+item.id;
-  const isEditing = gastosEditingId===key;
-  const isConfirmingDelete = gastosPendingDeleteId===key;
-  const isAbonando = gastosEditingId === ('abono:'+cat+':'+item.id);
-
-  if(isEditing){
-    return `<div class="task-card">
-      <label>Nombre</label>
-      <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
-      <label>${labels.montoLabel}</label>
-      <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
-      <label>Fecha</label>
-      <input type="date" id="gs_edit_date_${item.id}" value="${item.date||''}">
-      <label>Tasa de interés mensual (0 si no tiene)</label>
-      <input type="text" id="gs_edit_tasa_${item.id}" value="${item.tasaMensual||0}" inputmode="decimal">
-      <label>Día del mes en que ${cat==='espera'?'la pagas':'te lo pagan'} (opcional)</label>
-      <input type="text" id="gs_edit_diapago_${item.id}" value="${item.diaPago||''}" inputmode="numeric" maxlength="2" style="max-width:100px;">
-      ${cat==='espera' ? `<label>Cuota mensual pactada (opcional)</label>
-      <input type="text" id="gs_edit_cuota_${item.id}" value="${item.cuotaPactada||''}" placeholder="Ej. 500000" inputmode="numeric">` : ''}
-      <div class="icon-actions" style="margin-top:8px;">
-        ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
-        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-      </div>
-    </div>`;
-  }
-
-  const total = Number(item.amount||0);
-  const conInteres = (cat==='espera' || cat==='prestamos');
-  const amort = conInteres ? calcularAmortizacion(item) : null;
-  const abonado = esperaAbonado(item);
-  const saldo = conInteres ? amort.saldoTotal : esperaSaldo(item);
-  const pctCapital = total>0 ? Math.min(100, Math.round(((total-(conInteres?amort.saldoCapital:saldo))/total)*100)) : 0;
-  const pagado = saldo <= 0;
-  const isVencido = !pagado && item.date && item.date < todayStr();
-  const abonos = (item.abonos||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-
-  let actions;
-  if(isConfirmingDelete){
-    actions = iconAction('complete','check','Confirmar', `data-gastos-confirm-delete="${key}"`) + iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`);
-  } else {
-    actions = iconAction('edit','edit','Editar', `data-gastos-edit="${key}"`);
-    if(!pagado) actions += `<button type="button" class="icon-btn" title="${labels.accionLabel}" aria-label="${labels.accionLabel}" data-gastos-abono-open="${cat}:${item.id}">${labels.icono}</button>`;
-    if(conInteres && !amort.sinFecha) actions += `<button type="button" class="icon-btn" title="Ver tabla" aria-label="Ver tabla" data-ver-tabla="${item.id}" data-ver-tabla-cat="${cat}">📈</button>`;
-    actions += iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`);
-  }
-
-  const abonoFormHtml = isAbonando ? `
-    <div style="margin-top:8px;">
-      <label>Monto</label>
-      <input type="text" id="gs_abono_amount_${item.id}" placeholder="Monto" inputmode="numeric">
-      <label>Fecha del abono</label>
-      <input type="date" id="gs_abono_date_${item.id}" value="${todayStr()}">
-      <div class="icon-actions" style="margin-top:8px;">
-        ${iconAction('save','save','Agregar', `data-gastos-abono-add="${cat}:${item.id}"`)}
-        ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-      </div>
-    </div>` : '';
-
-  const abonosListHtml = abonos.length ? abonos.map(a=>`
-    <div class="task-card" style="padding:8px 10px;">
-      <div class="task-top">
-        <div class="task-name" style="font-size:12.5px;">${a.date}</div>
-        <div style="display:flex;align-items:center;gap:6px;">
-          <div class="task-name" style="font-size:12.5px;">${formatCOP(a.amount)}</div>
-          <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:12px;" data-gastos-abono-delete="${cat}:${item.id}:${a.id}" title="Eliminar">🗑️</button>
+function renderGastosDeudaTabla(cat, sorted, labels){
+  const rows = sorted.map(item=>{
+    const key = cat+':'+item.id;
+    const isEditing = gastosEditingId===key;
+    if(isEditing){
+      const isConfirmingDelete = gastosPendingDeleteId === key;
+      if(isConfirmingDelete){
+        return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
+          <div class="task-card" style="margin:0;">
+            <div class="task-meta" style="margin-bottom:8px;">⚠️ ¿Eliminar "${escapeHtml(item.name)}"? Esta acción no se puede deshacer.</div>
+            <div class="icon-actions">
+              ${iconAction('complete','check','Sí, eliminar', `data-gastos-confirm-delete="${key}"`)}
+              ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`)}
+            </div>
+          </div>
+        </td></tr>`;
+      }
+      return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
+        <div class="task-card" style="margin:0;">
+          <label>Nombre</label>
+          <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
+          <label>${labels.montoLabel}</label>
+          <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
+          <label>Fecha</label>
+          <input type="date" id="gs_edit_date_${item.id}" value="${item.date||''}">
+          <label>Tasa de interés mensual (0 si no tiene)</label>
+          <input type="text" id="gs_edit_tasa_${item.id}" value="${item.tasaMensual||0}" inputmode="decimal">
+          <label>Día del mes en que ${cat==='espera'?'la pagas':'te lo pagan'} (opcional)</label>
+          <input type="text" id="gs_edit_diapago_${item.id}" value="${item.diaPago||''}" inputmode="numeric" maxlength="2" style="max-width:100px;">
+          ${cat==='espera' ? `<label>Cuota mensual pactada (opcional)</label>
+          <input type="text" id="gs_edit_cuota_${item.id}" value="${item.cuotaPactada||''}" placeholder="Ej. 500000" inputmode="numeric">` : ''}
+          <div class="icon-actions" style="margin-top:8px;">
+            ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
+            ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+            ${iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`)}
+          </div>
         </div>
-      </div>
-    </div>`).join('') : '';
-
-  const detalleInteresHtml = conInteres
-    ? `<div class="task-meta" style="margin-top:4px;">Capital pendiente: ${formatCOP(amort.saldoCapital)}${item.tasaMensual?` · Interés pendiente: ${formatCOP(amort.saldoInteres)}`:''} · Total: ${formatCOP(saldo)}${item.tasaMensual?` · Tasa: ${item.tasaMensual}% mensual`:''}${item.diaPago?` · día ${item.diaPago} de cada mes`:''}${amort.sinFecha?' · (agrega fecha para ver tabla)':''}</div>`
-    : `<div class="task-meta" style="margin-top:4px;">${labels.abonadoLabel}: ${formatCOP(abonado)} · Saldo: ${formatCOP(saldo)}</div>`;
-
-  let cuotaHtml = '';
-  if(cat==='espera' && item.cuotaPactada){
-    const mesActualCuota = currentMonthStr();
-    const abonadoEsteMes = (item.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActualCuota).reduce((s,a)=>s+Number(a.amount||0),0);
-    const faltante = Number(item.cuotaPactada) - abonadoEsteMes;
-    const cumplida = faltante <= 0;
-    cuotaHtml = `<div class="task-meta" style="margin-top:2px;"><span class="${cumplida?'money-positive':'money-negative'}">${cumplida?'🟢':'🟠'} Cuota de ${monthLabel(mesActualCuota)}: pactada ${formatCOP(item.cuotaPactada)}, llevas ${formatCOP(abonadoEsteMes)}${cumplida?' — cumplida':` — te faltan ${formatCOP(faltante)}`}</span></div>`;
-  }
-
-  return `<div class="task-card ${pagado?'status-terminada':(isVencido?'status-organizar':'status-sin-iniciar')}">
-    <div class="task-top">
-      <div>
-        <div class="task-name">${escapeHtml(item.name)}</div>
-        <div class="task-meta">
-          <span class="badge ${pagado?'status-terminada':(isVencido?'status-organizar':'status-sin-iniciar')}">${pagado?'Pagado':(isVencido?'Vencido':'Pendiente')}</span>
-          ${item.date?`<span>${item.date}</span>`:''}
+      </td></tr>`;
+    }
+    const isAbonando = gastosEditingId === ('abono:'+cat+':'+item.id);
+    if(isAbonando){
+      return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
+        <div class="task-card" style="margin:0;">
+          <label>Monto</label>
+          <input type="text" id="gs_abono_amount_${item.id}" placeholder="Monto" inputmode="numeric">
+          <label>Fecha del ${cat==='espera'?'abono':'cobro'}</label>
+          <input type="date" id="gs_abono_date_${item.id}" value="${todayStr()}">
+          <div class="icon-actions" style="margin-top:8px;">
+            ${iconAction('save','save','Agregar', `data-gastos-abono-add="${cat}:${item.id}"`)}
+            ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+          </div>
         </div>
-      </div>
-      <div class="task-name">${formatCOP(total)}</div>
-    </div>
-    <div class="progress-track"><div class="progress-fill" style="width:${pctCapital}%;"></div></div>
-    ${detalleInteresHtml}
-    ${cuotaHtml}
-    <div class="icon-actions" style="margin-top:8px;">${actions}</div>
-    ${abonoFormHtml}
-    ${abonosListHtml ? `<div style="margin-top:8px;">${abonosListHtml}</div>` : ''}
+      </td></tr>`;
+    }
+
+    const total = Number(item.amount||0);
+    const conInteres = true;
+    const amort = calcularAmortizacion(item);
+    const abonado = esperaAbonado(item);
+    const saldo = amort.saldoTotal;
+    const pagado = saldo <= 0;
+    const isVencido = !pagado && item.date && item.date < todayStr();
+    let circulo = pagado ? '🟢' : (isVencido ? '🔴' : '🟡');
+    let estadoTexto = pagado ? 'Pagado' : (isVencido ? 'Vencido' : 'Pendiente');
+
+    const isViendo = gastosEditingId === ('verdeuda:'+cat+':'+item.id);
+    let detailRow = '';
+    if(isViendo){
+      const abonos = (item.abonos||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+      let cuotaHtml = '';
+      if(cat==='espera' && item.cuotaPactada){
+        const mesActualCuota = currentMonthStr();
+        const abonadoEsteMes = (item.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActualCuota).reduce((s,a)=>s+Number(a.amount||0),0);
+        const faltante = Number(item.cuotaPactada) - abonadoEsteMes;
+        const cumplida = faltante <= 0;
+        cuotaHtml = `<div class="task-meta" style="margin-bottom:6px;"><span class="${cumplida?'money-positive':'money-negative'}">${cumplida?'🟢':'🟠'} Cuota de ${monthLabel(mesActualCuota)}: pactada ${formatCOP(item.cuotaPactada)}, llevas ${formatCOP(abonadoEsteMes)}${cumplida?' — cumplida':` — te faltan ${formatCOP(faltante)}`}</span></div>`;
+      }
+      const detalleInteresHtml = `<div class="task-meta" style="margin-bottom:6px;">Capital pendiente: ${formatCOP(amort.saldoCapital)}${item.tasaMensual?` · Interés pendiente: ${formatCOP(amort.saldoInteres)}`:''}${item.tasaMensual?` · Tasa: ${item.tasaMensual}% mensual`:''}${item.diaPago?` · día ${item.diaPago} de cada mes`:''}${amort.sinFecha?' · (agrega fecha para ver tabla)':''}</div>`;
+      const verTablaBtn = (!amort.sinFecha) ? `<button type="button" class="secondary" data-ver-tabla="${item.id}" data-ver-tabla-cat="${cat}" style="width:100%;margin-bottom:8px;">📈 Ver tabla de amortización</button>` : '';
+      const abonosHtml = abonos.length ? abonos.map(a=>`
+        <div class="task-card" style="padding:6px 8px;margin-bottom:4px;">
+          <div class="task-top">
+            <div class="task-name" style="font-size:12px;">${a.date}</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <div class="task-name" style="font-size:12px;">${formatCOP(a.amount)}</div>
+              <button type="button" class="icon-btn" style="width:24px;height:24px;font-size:10px;" data-gastos-abono-delete="${cat}:${item.id}:${a.id}" title="Eliminar">🗑️</button>
+            </div>
+          </div>
+        </div>`).join('') : `<div class="empty">Sin ${cat==='espera'?'abonos':'cobros'} todavía.</div>`;
+      detailRow = `<tr><td colspan="4" style="padding:8px;background:var(--panel);">${detalleInteresHtml}${cuotaHtml}${verTablaBtn}${abonosHtml}</td></tr>`;
+    }
+
+    let accionesHtml = `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-gastos-toggle-ver="verdeuda:${cat}:${item.id}" title="Ver detalle">👁️</button>`;
+    if(!pagado) accionesHtml += `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-gastos-abono-open="${cat}:${item.id}" title="${labels.accionLabel}">${labels.icono}</button>`;
+    accionesHtml += `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-gastos-edit="${key}" title="Editar">✏️</button>`;
+
+    const mainRow = `<tr${pagado?' style="opacity:.55;"':''}>
+      <td style="text-align:left;">${circulo} ${escapeHtml(item.name)}${pagado?' <span style="font-size:9.5px;">(resuelto)</span>':''}</td>
+      <td>${formatCOP(total)}<div style="font-size:9.5px;color:var(--muted);font-weight:400;">saldo: ${formatCOP(saldo)}</div></td>
+      <td>${estadoTexto}</td>
+      <td style="white-space:nowrap;">${accionesHtml}</td>
+    </tr>`;
+    return mainRow + detailRow;
+  }).join('');
+  return `<div class="task-meta" style="text-align:center;margin-bottom:4px;">💡 Si no ves todo, gira el celular</div>
+  <div style="overflow-x:auto;">
+    <table class="amort-table compact-table">
+      <thead><tr><th>Nombre</th><th>Total</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
   </div>`;
 }
 
@@ -2242,6 +2299,18 @@ function renderGastosDatedTabla(cat, sorted){
     const key = cat+':'+item.id;
     const isEditing = gastosEditingId===key;
     if(isEditing){
+      const isConfirmingDelete = gastosPendingDeleteId === key;
+      if(isConfirmingDelete){
+        return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
+          <div class="task-card" style="margin:0;">
+            <div class="task-meta" style="margin-bottom:8px;">⚠️ ¿Eliminar "${escapeHtml(item.name)}"? Esta acción no se puede deshacer.</div>
+            <div class="icon-actions">
+              ${iconAction('complete','check','Sí, eliminar', `data-gastos-confirm-delete="${key}"`)}
+              ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`)}
+            </div>
+          </div>
+        </td></tr>`;
+      }
       return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
         <div class="task-card" style="margin:0;">
           <label>Nombre</label>
@@ -2703,6 +2772,18 @@ function renderGastosCiclicosTabla(){
     const key = 'ciclicos:'+c.id;
     const isEditing = gastosEditingId===key;
     if(isEditing){
+      const isConfirmingDelete = gastosPendingDeleteId === key;
+      if(isConfirmingDelete){
+        return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
+          <div class="task-card" style="margin:0;">
+            <div class="task-meta" style="margin-bottom:8px;">⚠️ ¿Eliminar "${escapeHtml(c.name)}"? Esta acción no se puede deshacer.</div>
+            <div class="icon-actions">
+              ${iconAction('complete','check','Sí, eliminar', `data-gastos-confirm-delete="${key}"`)}
+              ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`)}
+            </div>
+          </div>
+        </td></tr>`;
+      }
       return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
         <div class="task-card" style="margin:0;">
           <label>Nombre</label>
@@ -3278,6 +3359,13 @@ function bindEvents(){
     el.onclick = ()=>{
       const key = el.getAttribute('data-gastos-saldos-toggle');
       gastosSaldosAbierto[key] = !gastosSaldosAbierto[key];
+      render();
+    };
+  });
+  document.querySelectorAll('[data-gastos-toggle-ver]').forEach(el=>{
+    el.onclick = ()=>{
+      const key = el.getAttribute('data-gastos-toggle-ver');
+      gastosEditingId = (gastosEditingId === key) ? null : key;
       render();
     };
   });
