@@ -2864,7 +2864,9 @@ function viewGastosEsteMes(){
             <td class="money-positive">${d.cobros>0?'+'+formatCOP(d.cobros):'—'}</td>
             <td class="${d.saldoEstimado>=0?'money-positive':'money-negative'}">${formatCOP(d.saldoEstimado)}</td>
           </tr>
-          <tr><td colspan="4" style="text-align:left;padding-top:0;"><div class="task-meta">${d.detalle.map(x=>x.label+' ('+(x.tipo==='pago'?'-':'+')+formatCOP(x.monto)+')').join(' · ')}</div></td></tr>
+          <tr><td colspan="4" style="text-align:left;padding-top:0;padding-bottom:10px;">
+            ${d.detalle.map(x=>`<div class="task-meta" style="margin-top:2px;">• ${x.label} <span class="${x.tipo==='pago'?'money-negative':'money-positive'}">(${x.tipo==='pago'?'-':'+'}${formatCOP(x.monto)})</span></div>`).join('')}
+          </td></tr>
         `).join('')}</tbody>
       </table></div>`;
       const negativo = cal.dias.find(d=>d.saldoEstimado<0);
