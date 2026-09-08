@@ -480,8 +480,47 @@ function renderTabs(){
   });
 }
 
+function resumenHoyGastos(){
+  const today = todayStr();
+  const todayDay = new Date().getDate();
+  const mesActual = currentMonthStr();
+  const fijosHoy = gastosFijos.filter(i=>!i.isProvision && i.dueDay===todayDay && fijoEstadoMes(i, mesActual).estado!=='pagado');
+  const ciclicosHoy = gastosCiclicos.filter(c=>c.nextDueDate===today);
+  const imprevistosHoy = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date===today);
+  const esperaHoy = gastosEspera.filter(e=>e.status==='Pendiente' && e.diaPago===todayDay);
+  const ingresosHoy = gastosIngresos.filter(i=>i.dueDay===todayDay && !estaRegistrado(i, mesActual));
+  const prestamosHoy = gastosPrestamos.filter(p=>p.diaPago===todayDay && deudaSaldoActual('prestamos', p)>0);
+
+  let totalPagar = 0;
+  fijosHoy.forEach(i=>{ totalPagar += fijoEstadoMes(i, mesActual).debido; });
+  ciclicosHoy.forEach(c=>{ totalPagar += Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1)); });
+  imprevistosHoy.forEach(e=>{ totalPagar += Number(e.amount||0); });
+  esperaHoy.forEach(e=>{ totalPagar += deudaSaldoActual('espera', e); });
+
+  let totalCobrar = 0;
+  ingresosHoy.forEach(i=>{ totalCobrar += gastosMonthlyInfo('ingresos', i, mesActual).plan; });
+  prestamosHoy.forEach(p=>{ totalCobrar += deudaSaldoActual('prestamos', p); });
+
+  return { totalPagar, totalCobrar };
+}
 function viewHome(){
+  const today = todayStr();
+  const todayCount = tasks.filter(t=>t.date===today && (t.status==='Sin iniciar'||t.status==='En ejecución'||t.status==='Pendiente')).length;
+  const pendOrganizarCount = tasks.filter(t=>t.status==='Por organizar').length;
+  const g = resumenHoyGastos();
   return `
+  <div class="panel" data-home-go-hoy="1" style="cursor:pointer;text-align:center;padding:16px;">
+    <div class="task-meta" style="font-size:13px;">🗂️ Tareas para hoy</div>
+    <div style="font-size:32px;font-weight:800;margin-top:2px;color:var(--accent-dark);">${todayCount}</div>
+    ${pendOrganizarCount>0 ? `<div class="task-meta" style="margin-top:4px;">📥 ${pendOrganizarCount} sin organizar</div>` : ''}
+  </div>
+  <div class="panel" data-home-go-gastos="1" style="cursor:pointer;text-align:center;padding:16px;">
+    <div class="task-meta" style="font-size:13px;">💰 Gastos para hoy</div>
+    <div style="display:flex;justify-content:center;gap:24px;margin-top:2px;">
+      <div><div style="font-size:22px;font-weight:800;" class="money-negative">${formatCOP(g.totalPagar)}</div><div class="task-meta">por pagar</div></div>
+      <div><div style="font-size:22px;font-weight:800;" class="money-positive">${formatCOP(g.totalCobrar)}</div><div class="task-meta">por cobrar</div></div>
+    </div>
+  </div>
   <div class="panel" style="text-align:center;padding:36px 16px;">
     <h2 style="margin-bottom:20px;">¿Qué quieres hacer?</h2>
     <button type="button" class="primary" data-home-select="tareas" style="width:100%;padding:18px;font-size:16px;margin-bottom:12px;">🗂️ Tareas</button>
@@ -3236,6 +3275,12 @@ function bindEvents(){
       currentTab = section==='tareas' ? 'crear' : 'g-resumen';
       render();
     };
+  });
+  document.querySelectorAll('[data-home-go-hoy]').forEach(el=>{
+    el.onclick = ()=>{ homeSection='tareas'; currentTab='hoy'; render(); };
+  });
+  document.querySelectorAll('[data-home-go-gastos]').forEach(el=>{
+    el.onclick = ()=>{ homeSection='gastos'; currentTab='g-resumen'; render(); };
   });
   document.querySelectorAll('[data-crear-area]').forEach(b=>{
     const area = b.getAttribute('data-crear-area');
