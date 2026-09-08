@@ -1162,6 +1162,7 @@ function ultimosMeses(n){
   return meses;
 }
 function computeMonthSummary(mes){
+  const today = todayStr();
   const totalIngresos = gastosIngresos.reduce((s,i)=>s+gastosMonthlyInfo('ingresos',i,mes).real,0);
   const totalFijos = gastosFijos.reduce((s,i)=>s+gastosMonthlyInfo('fijos',i,mes).real,0);
   const totalProvisiones = gastosCiclicos.reduce((s,c)=>s+gastosMonthlyInfo('ciclicos',c,mes).real,0);
@@ -1169,21 +1170,20 @@ function computeMonthSummary(mes){
   const totalExtraordinarios = extraordinariosMes.reduce((s,e)=>s+Number(e.amount||0),0);
   const imprevistosPagadosDelMes = gastosExtraordinarios.reduce((s,e)=>{
     if(e.abonos && e.abonos.length){
-      return s + e.abonos.filter(a=>a.fecha && a.fecha.slice(0,7)===mes).reduce((s2,a)=>s2+Number(a.monto||0),0);
+      return s + e.abonos.filter(a=>a.fecha && a.fecha.slice(0,7)===mes && a.fecha<=today).reduce((s2,a)=>s2+Number(a.monto||0),0);
     }
-    if(e.status==='Pagado' && e.fechaPago && e.fechaPago.slice(0,7)===mes){
+    if(e.status==='Pagado' && e.fechaPago && e.fechaPago.slice(0,7)===mes && e.fechaPago<=today){
       return s + Number(e.amount||0);
     }
     return s;
   }, 0);
-  const today = todayStr();
   const esperaVencidos = gastosEspera.filter(e=>e.status==='Pendiente' && e.date && e.date < today);
   const totalEspera = esperaVencidos.reduce((s,e)=>s+deudaSaldoActual('espera', e),0);
-  const abonosDeudaDelMes = gastosEspera.reduce((s,e)=>s + (e.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
+  const abonosDeudaDelMes = gastosEspera.reduce((s,e)=>s + (e.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes && a.date<=today).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
   const prestamosDelMes = gastosPrestamos.filter(p=>p.date && p.date.slice(0,7)===mes);
   const totalPrestamosSalida = prestamosDelMes.reduce((s,p)=>s+Number(p.amount||0),0);
-  const cobrosDelMes = gastosPrestamos.reduce((s,p)=>s + (p.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
-  const totalAportesMetas = gastosMetas.reduce((s,m)=>s + (m.aportes||[]).filter(a=>a.date && a.date.slice(0,7)===mes).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
+  const cobrosDelMes = gastosPrestamos.reduce((s,p)=>s + (p.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes && a.date<=today).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
+  const totalAportesMetas = gastosMetas.reduce((s,m)=>s + (m.aportes||[]).filter(a=>a.date && a.date.slice(0,7)===mes && a.date<=today).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
   const aportesAhorrosDelMes = gastosCiclicos.reduce((s,c)=>s + ((c.contributions && c.contributions[mes]!==undefined) ? Number(c.contributions[mes]) : 0), 0);
   const saldoInicial = Number(gastosSaldoInicial[mes]||0);
   const totalGastos = totalFijos + totalProvisiones + imprevistosPagadosDelMes + abonosDeudaDelMes + totalPrestamosSalida + totalAportesMetas;
