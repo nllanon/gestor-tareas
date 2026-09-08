@@ -495,7 +495,7 @@ function resumenHoyGastos(){
   fijosHoy.forEach(i=>{ totalPagar += fijoEstadoMes(i, mesActual).debido; });
   ciclicosHoy.forEach(c=>{ totalPagar += Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1)); });
   imprevistosHoy.forEach(e=>{ totalPagar += Number(e.amount||0); });
-  esperaHoy.forEach(e=>{ totalPagar += deudaSaldoActual('espera', e); });
+  esperaHoy.forEach(e=>{ totalPagar += montoPendienteMesEspera(e); });
 
   let totalCobrar = 0;
   ingresosHoy.forEach(i=>{ totalCobrar += gastosMonthlyInfo('ingresos', i, mesActual).plan; });
@@ -1988,6 +1988,16 @@ function deudaSaldoActual(cat, item){
   if(cat==='espera' || cat==='prestamos') return calcularAmortizacion(item).saldoTotal;
   return esperaSaldo(item);
 }
+function montoPendienteMesEspera(item){
+  const saldoTotal = deudaSaldoActual('espera', item);
+  if(item.cuotaPactada){
+    const mesActualCuota = currentMonthStr();
+    const abonadoEsteMes = (item.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActualCuota).reduce((s,a)=>s+Number(a.amount||0),0);
+    const faltante = Number(item.cuotaPactada) - abonadoEsteMes;
+    return Math.max(0, Math.min(faltante, saldoTotal));
+  }
+  return saldoTotal;
+}
 function deudaSaldoEnMes(item, mes){
   const amort = calcularAmortizacion(item);
   if(amort.sinFecha) return amort.saldoTotal;
@@ -2718,8 +2728,8 @@ function viewGastosEsteMes(){
     });
     imprevistosHoy.forEach(e=>{ filasHoy += renderGastosPendingRow('⚡ '+e.name, e.amount, null); });
     esperaHoy.forEach(e=>{
-      const saldoE = deudaSaldoActual('espera', e);
-      filasHoy += renderGastosPendingRow('⏳ '+e.name, saldoE, null);
+      const saldoE = montoPendienteMesEspera(e);
+      filasHoy += renderGastosPendingRow('⏳ '+e.name+(e.cuotaPactada?' (cuota)':''), saldoE, null);
     });
     ingresosHoy.forEach(i=>{
       const info = gastosMonthlyInfo('ingresos', i, mesActual);
@@ -2757,9 +2767,9 @@ function viewGastosEsteMes(){
       filasOtros += renderGastosPendingRow('⚡ '+e.name+(e.date?` (${e.date})`:''), e.amount, null);
     });
     esperaPend.forEach(e=>{
-      const saldoE = deudaSaldoActual('espera', e);
+      const saldoE = montoPendienteMesEspera(e);
       totalOtros += saldoE;
-      filasOtros += renderGastosPendingRow('⏳ '+e.name+(e.diaPago?` (día ${e.diaPago})`:' (sin día de pago fijo)'), saldoE, null);
+      filasOtros += renderGastosPendingRow('⏳ '+e.name+(e.cuotaPactada?' (cuota)':'')+(e.diaPago?` (día ${e.diaPago})`:' (sin día de pago fijo)'), saldoE, null);
     });
     html += `<div class="money-row total"><span>Total otros pendientes</span><span class="money-negative">${formatCOP(totalOtros)}</span></div>${filasOtros}`;
   }
