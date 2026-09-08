@@ -1246,7 +1246,7 @@ function viewGastosResumen(){
       <canvas id="chart-ingresos-gastos" height="160"></canvas>
     </div>`;
 
-    if(fijosPendientes.length || ciclicosPendientes.length || extraordinariosMes.length || esperaVencidos.length){
+    if(fijosPendientes.length || ciclicosPendientes.length || extraordinariosMes.length){
       let totalPendientePagar = 0;
       let filasPagar = '';
       fijosPendientes.forEach(i=>{
@@ -1263,13 +1263,9 @@ function viewGastosResumen(){
         totalPendientePagar += Number(e.amount||0);
         filasPagar += renderGastosPendingRow(e.name, e.amount, null);
       });
-      esperaVencidos.forEach(e=>{
-        const saldoE = deudaSaldoActual('espera', e);
-        totalPendientePagar += saldoE;
-        filasPagar += renderGastosPendingRow(e.name+' (vencido desde '+e.date+')', saldoE, null);
-      });
-      html += `<div class="panel"><h2>🔔 Pendiente por pagar</h2>
-        <div class="money-row total"><span>Total pendiente</span><span class="money-negative">${formatCOP(totalPendientePagar)}</span></div>
+      html += `<div class="panel"><h2>🔔 Pendiente por pagar este mes</h2>
+        <div class="status-msg">Solo lo que corresponde a ${monthLabel(gastosViewMonth)} — pagos fijos, provisiones e imprevistos. No incluye créditos, esos van aparte más abajo.</div>
+        <div class="money-row total"><span>Total pendiente del mes</span><span class="money-negative">${formatCOP(totalPendientePagar)}</span></div>
         ${filasPagar}</div>`;
     }
     if(ingresosPendientes.length || prestamosPendientes.length){
@@ -1288,6 +1284,28 @@ function viewGastosResumen(){
       html += `<div class="panel"><h2>🔔 Pendiente por cobrar</h2>
         <div class="money-row total"><span>Total pendiente</span><span class="money-positive">${formatCOP(totalPendienteCobrar)}</span></div>
         ${filasCobrar}</div>`;
+    }
+
+    // ---------- Lo que debo (creditos/prestamos): aparte, al final, con su historico ----------
+    const esperaTodasPendientes = gastosEspera.filter(e=>e.status==='Pendiente');
+    if(esperaTodasPendientes.length){
+      let totalDeuda = 0;
+      let filasDeuda = '';
+      esperaTodasPendientes.forEach(e=>{
+        const saldoE = deudaSaldoActual('espera', e);
+        totalDeuda += saldoE;
+        filasDeuda += renderGastosPendingRow(e.name+(e.date?' (desde '+e.date+')':''), saldoE, null);
+      });
+      html += `<div class="panel"><h2>💳 Lo que debo (créditos y préstamos)</h2>
+        <div class="status-msg">Esto no es del mes — son plazos más largos. Va aparte para no mezclarlo con lo que sí toca pagar ahora.</div>
+        <div class="money-row total"><span>Total en créditos</span><span class="money-negative">${formatCOP(totalDeuda)}</span></div>
+        ${filasDeuda}</div>`;
+
+      const historicoDeuda = ultimosMeses(6);
+      html += `<div class="panel">
+        <h2>📈 Cómo ha cambiado tu deuda total</h2>
+        <canvas id="chart-deuda" height="160"></canvas>
+      </div>`;
     }
   }
 
@@ -1944,6 +1962,17 @@ function deudaSaldoActual(cat, item){
   if(cat==='espera' || cat==='prestamos') return calcularAmortizacion(item).saldoTotal;
   return esperaSaldo(item);
 }
+function deudaSaldoEnMes(item, mes){
+  const amort = calcularAmortizacion(item);
+  if(amort.sinFecha) return amort.saldoTotal;
+  if(!item.date || item.date.slice(0,7) > mes) return 0;
+  const row = (amort.rows||[]).find(r=>r.mes===mes);
+  if(row) return row.saldoTotalMes;
+  return mes > currentMonthStr() ? amort.saldoTotal : 0;
+}
+function totalDeudaEnMes(mes){
+  return gastosEspera.reduce((s,e)=>s+deudaSaldoEnMes(e, mes), 0);
+}
 
 const LABELS_ESPERA = { montoLabel:'Monto total', abonadoLabel:'Abonado', accionLabel:'Registrar abono', icono:'💵' };
 const LABELS_PRESTAMOS = { montoLabel:'Monto prestado', abonadoLabel:'Cobrado', accionLabel:'Registrar cobro', icono:'💰' };
@@ -2415,6 +2444,25 @@ function renderGastosCharts(){
         ]
       },
       options: { plugins:{legend:{position:'bottom'}}, scales:{ y:{ ticks:{ callback:v=>formatCOP(v) } } } }
+    });
+  }
+
+  const elDeuda = document.getElementById('chart-deuda');
+  if(elDeuda){
+    chartInstances.deuda = new Chart(elDeuda, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Deuda total (créditos y préstamos)',
+          data: meses.map(m=>totalDeudaEnMes(m)),
+          borderColor: '#c5221f',
+          backgroundColor: 'rgba(197,34,31,0.12)',
+          fill: true,
+          tension: 0.3,
+        }]
+      },
+      options: { plugins:{legend:{display:false}}, scales:{ y:{ ticks:{ callback:v=>formatCOP(v) } } } }
     });
   }
 }
