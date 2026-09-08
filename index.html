@@ -1799,7 +1799,8 @@ function gastosOrdenKey(cat, item){
 }
 function deudaCuotaEstaCumplidaEsteMes(e){
   const mes = currentMonthStr();
-  const abonadoEsteMes = (e.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes).reduce((s,a)=>s+Number(a.amount||0),0);
+  const hoy = todayStr();
+  const abonadoEsteMes = (e.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes && a.date<=hoy).reduce((s,a)=>s+Number(a.amount||0),0);
   return abonadoEsteMes >= Number(e.cuotaPactada||0);
 }
 function deudasComoFijosVirtuales(){
@@ -1819,7 +1820,8 @@ function renderGastosTablaCompacta(cat, list){
       const cumplida = deudaCuotaEstaCumplidaEsteMes(item._espera);
       const circulo = cumplida ? '🟢' : (item.dueDay < todayDay ? '🔴' : '🟡');
       const mes = currentMonthStr();
-      const abonadoEsteMes = (item._espera.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes).reduce((s,a)=>s+Number(a.amount||0),0);
+      const hoy = todayStr();
+      const abonadoEsteMes = (item._espera.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes && a.date<=hoy).reduce((s,a)=>s+Number(a.amount||0),0);
       return `<tr${cumplida?' style="opacity:.55;"':''}>
         <td style="text-align:left;">${circulo} ${escapeHtml(item.name)} <span style="font-size:9.5px;color:var(--muted);">(deuda)</span>${cumplida?' <span style="font-size:9.5px;">(resuelto)</span>':''}</td>
         <td>${formatCOP(item.amount)}${abonadoEsteMes>0 ? `<div style="font-size:9.5px;color:var(--muted);font-weight:400;">real: ${formatCOP(abonadoEsteMes)}</div>` : ''}</td>
