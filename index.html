@@ -1724,8 +1724,18 @@ async function onGastosSaveSaldo(){
 async function onGastosCerrarMes(){
   const month = gastosViewMonth;
   const { disponible } = computeMonthSummary(month);
-
   const nextMonth = addMonths(month, 1);
+
+  const yaHabiaSaldo = gastosSaldoInicial[nextMonth] !== undefined;
+  if(yaHabiaSaldo && gastosSaldoInicial[nextMonth] !== disponible){
+    const confirmado = confirm(
+      monthLabel(nextMonth)+' ya tiene un saldo inicial de '+formatCOP(gastosSaldoInicial[nextMonth])+
+      ' (puesto a mano o de un cierre anterior). Si continúas, se reemplaza por '+formatCOP(disponible)+
+      ' (el disponible recién calculado de '+monthLabel(month)+'). ¿Confirmas el reemplazo?'
+    );
+    if(!confirmado) return;
+  }
+
   gastosSaldoInicial[nextMonth] = disponible;
   gastosMesesCerrados[month] = true;
   await saveGastosSaldo();
