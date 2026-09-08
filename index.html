@@ -1789,15 +1789,12 @@ function gastosOrdenKey(cat, item){
   return [estaRegistrado(item, gastosViewMonth) ? 2 : 0, dia];
 }
 function deudaCuotaEstaCumplidaEsteMes(e){
-  const mes = currentMonthStr();
-  const hoy = todayStr();
-  const abonadoEsteMes = (e.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes && a.date<=hoy).reduce((s,a)=>s+Number(a.amount||0),0);
-  return abonadoEsteMes >= Number(e.cuotaPactada||0);
+  return montoPendienteMesEspera(e) <= 0;
 }
 function deudasComoFijosVirtuales(){
   return gastosEspera.filter(e=>e.status==='Pendiente' && e.diaPago && e.cuotaPactada).map(e=>({
     _deudaCuota: true, _espera: e,
-    id: e.id, name: e.name, dueDay: e.diaPago, amount: e.cuotaPactada,
+    id: e.id, name: e.name, dueDay: e.diaPago, amount: montoPendienteMesEspera(e),
   }));
 }
 function renderGastosTablaCompacta(cat, list){
@@ -1812,11 +1809,10 @@ function renderGastosTablaCompacta(cat, list){
       const circulo = cumplida ? '🟢' : (item.dueDay < todayDay ? '🔴' : '🟡');
       const mes = currentMonthStr();
       const hoy = todayStr();
-      const abonadoEsteMes = (item._espera.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes && a.date<=hoy).reduce((s,a)=>s+Number(a.amount||0),0);
       const programadoEsteMes = (item._espera.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes && a.date>hoy).reduce((s,a)=>s+Number(a.amount||0),0);
       return `<tr${cumplida?' style="opacity:.55;"':''}>
-        <td style="text-align:left;">${circulo} ${escapeHtml(item.name)} <span style="font-size:9.5px;color:var(--muted);">(deuda)</span>${cumplida?' <span style="font-size:9.5px;">(resuelto)</span>':''}</td>
-        <td>${formatCOP(item.amount)}${abonadoEsteMes>0 ? `<div style="font-size:9.5px;color:var(--muted);font-weight:400;">real: ${formatCOP(abonadoEsteMes)}</div>` : ''}${programadoEsteMes>0 ? `<div style="font-size:9.5px;color:var(--muted);font-weight:400;">📅 programado: ${formatCOP(programadoEsteMes)}</div>` : ''}</td>
+        <td style="text-align:left;">${circulo} ${escapeHtml(item.name)} <span style="font-size:9.5px;color:var(--muted);">(deuda)</span>${cumplida?' <span style="font-size:9.5px;">(al día)</span>':''}</td>
+        <td>${formatCOP(item.amount)}<div style="font-size:9.5px;color:var(--muted);font-weight:400;">cuota: ${formatCOP(item._espera.cuotaPactada)}/mes</div>${programadoEsteMes>0 ? `<div style="font-size:9.5px;color:var(--muted);font-weight:400;">📅 programado: ${formatCOP(programadoEsteMes)}</div>` : ''}</td>
         <td>${item.dueDay?`día ${item.dueDay}`:''}</td>
         <td style="white-space:nowrap;"><button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-ver-cuota-deuda="${item.id}" title="Ver y registrar en Lo que debo">👁️</button></td>
       </tr>`;
@@ -2038,13 +2034,23 @@ function deudaSaldoActual(cat, item){
   if(cat==='espera' || cat==='prestamos') return calcularAmortizacion(item).saldoTotal;
   return esperaSaldo(item);
 }
+function mesesTranscurridosParaCuota(item, hastaMes){
+  const inicio = item.cuotaDesde || (item.date ? item.date.slice(0,7) : hastaMes);
+  const [ai, mi] = inicio.split('-').map(Number);
+  const [af, mf] = hastaMes.split('-').map(Number);
+  return Math.max(1, (af-ai)*12 + (mf-mi) + 1);
+}
 function montoPendienteMesEspera(item){
   const saldoTotal = deudaSaldoActual('espera', item);
   if(item.cuotaPactada){
+    const hoy = todayStr();
     const mesActualCuota = currentMonthStr();
-    const abonadoEsteMes = (item.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActualCuota).reduce((s,a)=>s+Number(a.amount||0),0);
-    const faltante = Number(item.cuotaPactada) - abonadoEsteMes;
-    return Math.max(0, Math.min(faltante, saldoTotal));
+    const inicio = item.cuotaDesde || (item.date ? item.date.slice(0,7) : mesActualCuota);
+    const meses = mesesTranscurridosParaCuota(item, mesActualCuota);
+    const deberiaLlevar = meses * Number(item.cuotaPactada);
+    const llevaAbonado = (item.abonos||[]).filter(a=>a.date && a.date>=(inicio+'-01') && a.date<=hoy).reduce((s,a)=>s+Number(a.amount||0),0);
+    const atraso = deberiaLlevar - llevaAbonado;
+    return Math.max(0, Math.min(atraso, saldoTotal));
   }
   return saldoTotal;
 }
@@ -2079,6 +2085,8 @@ function viewGastosEspera(){
     <input type="text" id="gs_new_tasa_espera" placeholder="Ej. 2 o 1.5 (% mensual)" inputmode="decimal">
     <label>Cuota mensual pactada (opcional)</label>
     <input type="text" id="gs_new_cuota_espera" placeholder="Ej. 500000" inputmode="numeric">
+    <label>¿Desde qué mes cuenta esa cuota? (para acumular atraso desde ahí, no antes)</label>
+    <input type="month" id="gs_new_cuotadesde_espera">
     <label>Día del mes en que la pagas (opcional, ej. 5)</label>
     <input type="text" id="gs_new_diapago_espera" inputmode="numeric" placeholder="1-31" maxlength="2" style="max-width:100px;">
     <button type="button" class="primary" data-gastos-add="espera" style="width:100%;margin-top:8px;">➤ Agregar</button>` : ''}
@@ -2305,12 +2313,12 @@ function renderGastosDeudaTabla(cat, sorted, labels){
           <input type="date" id="gs_edit_date_${item.id}" value="${item.date||''}">
           <label>Tasa de interés mensual (0 si no tiene)</label>
           <input type="text" id="gs_edit_tasa_${item.id}" value="${item.tasaMensual||0}" inputmode="decimal">` : ''}
-          <label>Día del mes en que ${cat==='espera'?'la pagas':(cat==='prestamos'?'te lo pagan':'aportas')} (opcional)</label>
+          <label>Día del mes en que ${cat==='espera'?'la pagas':'te lo pagan'} (opcional)</label>
           <input type="text" id="gs_edit_diapago_${item.id}" value="${item.diaPago||''}" inputmode="numeric" maxlength="2" style="max-width:100px;">
-          ${(cat==='espera'||cat==='ciclicos') ? `<label>Cuota mensual pactada${cat==='ciclicos'?'':' (opcional)'}</label>
-          <input type="text" id="gs_edit_cuota_${item.id}" value="${item.cuotaPactada||''}" placeholder="Ej. 500000" inputmode="numeric">` : ''}
-          ${cat==='ciclicos' ? `<label>Fecha en que necesitas la plata (opcional, solo de referencia)</label>
-          <input type="date" id="gs_edit_fecha_${item.id}" value="${item.fechaObjetivo||''}">` : ''}
+          ${cat==='espera' ? `<label>Cuota mensual pactada (opcional)</label>
+          <input type="text" id="gs_edit_cuota_${item.id}" value="${item.cuotaPactada||''}" placeholder="Ej. 500000" inputmode="numeric">
+          <label>¿Desde qué mes cuenta esa cuota? (para acumular atraso desde ahí, no antes)</label>
+          <input type="month" id="gs_edit_cuotadesde_${item.id}" value="${item.cuotaDesde||''}">` : ''}
           <div class="icon-actions" style="margin-top:8px;">
             ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
             ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
@@ -2350,12 +2358,17 @@ function renderGastosDeudaTabla(cat, sorted, labels){
     if(isViendo){
       const abonos = (item.abonos||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
       let cuotaHtml = '';
-      if((cat==='espera'||cat==='ciclicos') && item.cuotaPactada){
+      if(item.cuotaPactada){
+        const hoy = todayStr();
         const mesActualCuota = currentMonthStr();
-        const abonadoEsteMes = (item.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActualCuota).reduce((s,a)=>s+Number(a.amount||0),0);
-        const faltante = Number(item.cuotaPactada) - abonadoEsteMes;
-        const cumplida = faltante <= 0;
-        cuotaHtml = `<div class="task-meta" style="margin-bottom:6px;"><span class="${cumplida?'money-positive':'money-negative'}">${cumplida?'🟢':'🟠'} Cuota de ${monthLabel(mesActualCuota)}: pactada ${formatCOP(item.cuotaPactada)}, llevas ${formatCOP(abonadoEsteMes)}${cumplida?' — cumplida':` — te faltan ${formatCOP(faltante)}`}</span></div>`;
+        const inicio = item.cuotaDesde || (item.date ? item.date.slice(0,7) : mesActualCuota);
+        const meses = mesesTranscurridosParaCuota(item, mesActualCuota);
+        const deberiaLlevar = meses * Number(item.cuotaPactada);
+        const llevaAbonado = (item.abonos||[]).filter(a=>a.date && a.date>=(inicio+'-01') && a.date<=hoy).reduce((s,a)=>s+Number(a.amount||0),0);
+        const atraso = deberiaLlevar - llevaAbonado;
+        const alDia = atraso <= 0;
+        const mesesAtraso = Math.max(0, Math.round(atraso / Number(item.cuotaPactada)));
+        cuotaHtml = `<div class="task-meta" style="margin-bottom:6px;"><span class="${alDia?'money-positive':'money-negative'}">${alDia?'🟢 Al día':'🟠 Atrasado'} — cuota de ${formatCOP(item.cuotaPactada)}/mes desde ${monthLabel(inicio)}. Deberías llevar ${formatCOP(deberiaLlevar)} (${meses} cuota${meses===1?'':'s'}), llevas ${formatCOP(llevaAbonado)}${alDia?'':` — te faltan ${formatCOP(atraso)} (~${mesesAtraso} cuota${mesesAtraso===1?'':'s'})`}</span></div>`;
       }
       const detalleInteresHtml = cat==='ciclicos'
         ? `<div class="task-meta" style="margin-bottom:6px;">${item.diaPago?`Día ${item.diaPago} de cada mes`:''}${item.fechaObjetivo?` · Necesitas la plata el ${item.fechaObjetivo}`:''}</div>`
@@ -3919,29 +3932,30 @@ async function onGastosAdd(cat){
   const amount = parseMoney(document.getElementById('gs_new_amount_'+cat).value);
   if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
 
-  if(cat==='extraordinarios' || cat==='espera' || cat==='prestamos' || cat==='ciclicos'){
-    const dateEl = document.getElementById('gs_new_date_'+cat) || (cat==='ciclicos' ? document.getElementById('gs_new_fecha_ciclicos') : null);
+  if(cat==='extraordinarios' || cat==='espera' || cat==='prestamos'){
+    const dateEl = document.getElementById('gs_new_date_'+cat);
     const date = dateEl ? dateEl.value || null : null;
     if((cat==='extraordinarios' || cat==='prestamos') && !date){ alert('Indica la fecha.'); return; }
-    const newDeuda = { id:uid(), name, amount, date: (cat==='ciclicos'?null:date), status:'Pendiente', abonos:[] };
+    const newDeuda = { id:uid(), name, amount, date, status:'Pendiente', abonos:[] };
     if(cat==='espera' || cat==='prestamos'){
       const tasaEl = document.getElementById('gs_new_tasa_'+cat);
       const tasa = tasaEl ? parseFloat(tasaEl.value) : 0;
       newDeuda.tasaMensual = isNaN(tasa) ? 0 : tasa;
     }
-    if(cat==='espera' || cat==='prestamos' || cat==='ciclicos'){
+    if(cat==='espera' || cat==='prestamos'){
       const diaPagoEl = document.getElementById('gs_new_diapago_'+cat);
       const diaPago = diaPagoEl ? parseInt(diaPagoEl.value,10) : NaN;
-      if(cat==='ciclicos' && !(diaPago>=1 && diaPago<=31)){ alert('Indica el día del mes para aportar.'); return; }
       if(diaPago>=1 && diaPago<=31) newDeuda.diaPago = diaPago;
     }
-    if(cat==='espera' || cat==='ciclicos'){
-      const cuotaEl = document.getElementById('gs_new_cuota_'+cat);
+    if(cat==='espera'){
+      const cuotaEl = document.getElementById('gs_new_cuota_espera');
       const cuota = cuotaEl ? parseMoney(cuotaEl.value) : 0;
-      if(cat==='ciclicos' && cuota<=0){ alert('Indica la cuota mensual.'); return; }
-      if(cuota>0) newDeuda.cuotaPactada = cuota;
+      if(cuota>0){
+        newDeuda.cuotaPactada = cuota;
+        const cuotaDesdeEl = document.getElementById('gs_new_cuotadesde_espera');
+        newDeuda.cuotaDesde = (cuotaDesdeEl && cuotaDesdeEl.value) ? cuotaDesdeEl.value : currentMonthStr();
+      }
     }
-    if(cat==='ciclicos') newDeuda.fechaObjetivo = date;
     gastosListFor(cat).push(newDeuda);
     await saveGastos(cat);
   } else {
@@ -3987,53 +4001,43 @@ async function onGastosSaveEdit(key){
   if(!name){ alert('El nombre no puede estar vacío.'); return; }
   item.name = name;
 
-  if(cat==='ciclicos'){
-    const amount = parseMoney(document.getElementById('gs_edit_amount_'+id).value);
+  const amount = parseMoney(document.getElementById('gs_edit_amount_'+id).value);
+  if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
+  item.amount = amount;
+  const dateEl = document.getElementById('gs_edit_date_'+id);
+  if(dateEl) item.date = dateEl.value || null;
+  if(cat==='fijos'){
+    const dueDayEl = document.getElementById('gs_edit_dueday_'+id);
+    const dueDay = dueDayEl ? parseInt(dueDayEl.value,10) : NaN;
+    item.dueDay = (dueDay>=1 && dueDay<=31) ? dueDay : null;
+  }
+  if(cat==='ingresos'){
+    const dueDayEl = document.getElementById('gs_edit_dueday_'+id);
+    const dueDay = dueDayEl ? parseInt(dueDayEl.value,10) : NaN;
+    item.dueDay = (dueDay>=1 && dueDay<=31) ? dueDay : null;
+  }
+  if(cat==='espera' || cat==='prestamos'){
+    const tasaEl = document.getElementById('gs_edit_tasa_'+id);
+    const tasa = tasaEl ? parseFloat(tasaEl.value) : 0;
+    item.tasaMensual = isNaN(tasa) ? 0 : tasa;
     const diaPagoEl = document.getElementById('gs_edit_diapago_'+id);
     const diaPago = diaPagoEl ? parseInt(diaPagoEl.value,10) : NaN;
+    item.diaPago = (diaPago>=1 && diaPago<=31) ? diaPago : null;
+  }
+  if(cat==='espera'){
     const cuotaEl = document.getElementById('gs_edit_cuota_'+id);
     const cuota = cuotaEl ? parseMoney(cuotaEl.value) : 0;
-    if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
-    if(!(diaPago>=1 && diaPago<=31)){ alert('Indica el día del mes para aportar.'); return; }
-    if(cuota<=0){ alert('Indica la cuota mensual.'); return; }
-    item.amount = amount;
-    item.diaPago = diaPago;
-    item.cuotaPactada = cuota;
-    const fechaEl = document.getElementById('gs_edit_fecha_'+id);
-    item.fechaObjetivo = fechaEl ? (fechaEl.value || null) : null;
-  } else {
-    const amount = parseMoney(document.getElementById('gs_edit_amount_'+id).value);
-    if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
-    item.amount = amount;
-    const dateEl = document.getElementById('gs_edit_date_'+id);
-    if(dateEl) item.date = dateEl.value || null;
-    if(cat==='fijos'){
-      const dueDayEl = document.getElementById('gs_edit_dueday_'+id);
-      const dueDay = dueDayEl ? parseInt(dueDayEl.value,10) : NaN;
-      item.dueDay = (dueDay>=1 && dueDay<=31) ? dueDay : null;
-    }
-    if(cat==='ingresos'){
-      const dueDayEl = document.getElementById('gs_edit_dueday_'+id);
-      const dueDay = dueDayEl ? parseInt(dueDayEl.value,10) : NaN;
-      item.dueDay = (dueDay>=1 && dueDay<=31) ? dueDay : null;
-    }
-    if(cat==='espera' || cat==='prestamos'){
-      const tasaEl = document.getElementById('gs_edit_tasa_'+id);
-      const tasa = tasaEl ? parseFloat(tasaEl.value) : 0;
-      item.tasaMensual = isNaN(tasa) ? 0 : tasa;
-      const diaPagoEl = document.getElementById('gs_edit_diapago_'+id);
-      const diaPago = diaPagoEl ? parseInt(diaPagoEl.value,10) : NaN;
-      item.diaPago = (diaPago>=1 && diaPago<=31) ? diaPago : null;
-    }
-    if(cat==='espera'){
-      const cuotaEl = document.getElementById('gs_edit_cuota_'+id);
-      const cuota = cuotaEl ? parseMoney(cuotaEl.value) : 0;
-      item.cuotaPactada = cuota>0 ? cuota : null;
+    item.cuotaPactada = cuota>0 ? cuota : null;
+    if(cuota>0){
+      const cuotaDesdeEl = document.getElementById('gs_edit_cuotadesde_'+id);
+      item.cuotaDesde = (cuotaDesdeEl && cuotaDesdeEl.value) ? cuotaDesdeEl.value : (item.cuotaDesde || currentMonthStr());
+    } else {
+      item.cuotaDesde = null;
     }
   }
 
   gastosEditingId = null;
-  item.status = deudaSaldoActual(cat, item) <= 0 ? 'Pagado' : (cat==='ciclicos'||cat==='espera'||cat==='prestamos' ? 'Pendiente' : item.status);
+  item.status = deudaSaldoActual(cat, item) <= 0 ? 'Pagado' : (cat==='espera'||cat==='prestamos' ? 'Pendiente' : item.status);
   await saveGastos(cat);
   render();
 }
