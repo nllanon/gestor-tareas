@@ -1408,7 +1408,7 @@ function gastosMonthlyInfo(cat, item, month){
   if(cat==='ciclicos'){
     const plan = Number(item.totalAmount||0)/Math.max(1,Number(item.periodMonths||1));
     const contrib = (item.contributions && item.contributions[month]!==undefined) ? item.contributions[month] : null;
-    return { plan, real: contrib!==null?contrib:plan, confirmed: contrib!==null };
+    return { plan, real: contrib!==null?contrib:0, confirmed: contrib!==null };
   }
   if(cat==='fijos'){
     if(item.isProvision){
