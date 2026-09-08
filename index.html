@@ -322,25 +322,32 @@ let importConfirmPending = false;
 let importWarnings = [];
 
 function migrarCiclicoAntiguo(c){
-  if(c.periodMonths===undefined) return c;
-  const diaPago = c.nextDueDate ? Number(c.nextDueDate.slice(8,10)) : null;
-  const cuotaPactada = Math.round(Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1)));
-  const abonos = [];
-  Object.keys(c.contributions||{}).forEach(mes=>{
-    const monto = Number(c.contributions[mes]||0);
-    if(monto>0){
-      const dia = diaPago || 1;
-      abonos.push({ id: uid(), amount: monto, date: mes+'-'+String(dia).padStart(2,'0') });
-    }
-  });
+  if(c.montoObjetivo!==undefined) return c;
+
+  // Formato muy viejo (cada cuantos meses)
+  if(c.periodMonths!==undefined){
+    const diaPago = c.nextDueDate ? Number(c.nextDueDate.slice(8,10)) : 1;
+    const aportes = [];
+    Object.keys(c.contributions||{}).forEach(mes=>{
+      const monto = Number(c.contributions[mes]||0);
+      if(monto>0) aportes.push({ id: uid(), amount: monto, date: mes+'-'+String(diaPago).padStart(2,'0') });
+    });
+    return {
+      id: c.id, name: c.name,
+      montoObjetivo: Number(c.totalAmount||0),
+      fechaLimite: c.nextDueDate || null,
+      aportes,
+      createdAt: Date.now(),
+    };
+  }
+
+  // Formato intermedio (dia + cuota pactada, estilo Lo que debo)
   return {
-    id: c.id,
-    name: c.name,
-    amount: Number(c.totalAmount||0),
-    diaPago: diaPago,
-    cuotaPactada: cuotaPactada>0 ? cuotaPactada : null,
-    fechaObjetivo: c.nextDueDate || null,
-    abonos,
+    id: c.id, name: c.name,
+    montoObjetivo: Number(c.amount||0),
+    fechaLimite: c.fechaObjetivo || null,
+    aportes: (c.abonos||[]).slice(),
+    createdAt: Date.now(),
   };
 }
 // ======================================================
@@ -379,12 +386,9 @@ async function loadData(){
   try{ gastosCiclicos = (await kvGet('gastos_ciclicos')) || []; }catch(e){ console.error('Error cargando gastos_ciclicos', e); gastosCiclicos = []; }
   let ciclicosMigrados = false;
   gastosCiclicos = gastosCiclicos.map(c=>{
-    if(c.periodMonths===undefined) return c;
+    if(c.montoObjetivo!==undefined) return c;
     ciclicosMigrados = true;
     return migrarCiclicoAntiguo(c);
-  });
-  gastosCiclicos.forEach(c=>{
-    c.status = deudaSaldoActual('ciclicos', c) <= 0 ? 'Pagado' : 'Pendiente';
   });
   if(ciclicosMigrados){ try{ await saveGastos('ciclicos'); }catch(e){} }
   try{ gastosExtraordinarios = (await kvGet('gastos_extraordinarios')) || []; }catch(e){ console.error('Error cargando gastos_extraordinarios', e); gastosExtraordinarios = []; }
@@ -512,18 +516,11 @@ function renderTabs(){
   });
 }
 
-function ciclicoTocaHoy(c, mesActual, todayDay){
-  if(!c.diaPago || c.diaPago!==todayDay) return false;
-  if(deudaSaldoActual('ciclicos', c) <= 0) return false;
-  const abonadoEsteMes = (c.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActual).reduce((s,a)=>s+Number(a.amount||0),0);
-  return abonadoEsteMes < Number(c.cuotaPactada||0);
-}
 function resumenHoyGastos(){
   const today = todayStr();
   const todayDay = new Date().getDate();
   const mesActual = currentMonthStr();
   const fijosHoy = gastosFijos.filter(i=>!i.isProvision && i.dueDay===todayDay && fijoEstadoMes(i, mesActual).estado!=='pagado');
-  const ciclicosHoy = gastosCiclicos.filter(c=>ciclicoTocaHoy(c, mesActual, todayDay));
   const imprevistosHoy = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date===today);
   const esperaHoy = gastosEspera.filter(e=>e.status==='Pendiente' && e.diaPago===todayDay);
   const ingresosHoy = gastosIngresos.filter(i=>i.dueDay===todayDay && !estaRegistrado(i, mesActual));
@@ -531,10 +528,6 @@ function resumenHoyGastos(){
 
   let totalPagar = 0;
   fijosHoy.forEach(i=>{ totalPagar += fijoEstadoMes(i, mesActual).debido; });
-  ciclicosHoy.forEach(c=>{
-    const abonadoEsteMes = (c.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActual).reduce((s,a)=>s+Number(a.amount||0),0);
-    totalPagar += Math.max(0, Number(c.cuotaPactada||0) - abonadoEsteMes);
-  });
   imprevistosHoy.forEach(e=>{ totalPagar += Number(e.amount||0); });
   esperaHoy.forEach(e=>{ totalPagar += montoPendienteMesEspera(e); });
 
@@ -1213,7 +1206,7 @@ function computeMonthSummary(mes){
   const today = todayStr();
   const totalIngresos = gastosIngresos.reduce((s,i)=>s+gastosMonthlyInfo('ingresos',i,mes).real,0);
   const totalFijos = gastosFijos.reduce((s,i)=>s+gastosMonthlyInfo('fijos',i,mes).real,0);
-  const totalProvisiones = gastosCiclicos.reduce((s,c)=>s+gastosMonthlyInfo('ciclicos',c,mes).real,0);
+  const totalProvisiones = gastosCiclicos.reduce((s,c)=>s + (c.aportes||[]).filter(a=>a.date && a.date.slice(0,7)===mes && a.date<=today).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
   const extraordinariosMes = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date && e.date.slice(0,7)===mes);
   const totalExtraordinarios = extraordinariosMes.reduce((s,e)=>s+Number(e.amount||0),0);
   const imprevistosPagadosDelMes = gastosExtraordinarios.reduce((s,e)=>{
@@ -1232,7 +1225,7 @@ function computeMonthSummary(mes){
   const totalPrestamosSalida = prestamosDelMes.reduce((s,p)=>s+Number(p.amount||0),0);
   const cobrosDelMes = gastosPrestamos.reduce((s,p)=>s + (p.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes && a.date<=today).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
   const totalAportesMetas = gastosMetas.reduce((s,m)=>s + (m.aportes||[]).filter(a=>a.date && a.date.slice(0,7)===mes && a.date<=today).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
-  const aportesAhorrosDelMes = gastosCiclicos.reduce((s,c)=>s + ((c.contributions && c.contributions[mes]!==undefined) ? Number(c.contributions[mes]) : 0), 0);
+  const aportesAhorrosDelMes = gastosCiclicos.reduce((s,c)=>s + (c.aportes||[]).filter(a=>a.date && a.date.slice(0,7)===mes && a.date<=today).reduce((s2,a)=>s2+Number(a.amount||0),0), 0);
   const saldoInicial = Number(gastosSaldoInicial[mes]||0);
   const totalGastos = totalFijos + totalProvisiones + imprevistosPagadosDelMes + abonosDeudaDelMes + totalPrestamosSalida + totalAportesMetas;
   const disponible = saldoInicial + totalIngresos + cobrosDelMes - totalGastos;
@@ -1407,11 +1400,6 @@ function fijoEstadoMes(item, mes){
   return { estado:'pendiente', debido, abonado, saldo };
 }
 function gastosMonthlyInfo(cat, item, month){
-  if(cat==='ciclicos'){
-    const plan = Number(item.cuotaPactada||0);
-    const abonadoEsteMes = (item.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===month).reduce((s,a)=>s+Number(a.amount||0),0);
-    return { plan, real: abonadoEsteMes, confirmed: plan>0 && abonadoEsteMes>=plan };
-  }
   if(cat==='fijos'){
     if(item.isProvision){
       const plan = Number(item.amount||0);
@@ -1444,9 +1432,6 @@ function gastosResetMonthly(cat, item, month){
   } else {
     if(item.overrides) delete item.overrides[month];
   }
-}
-function ciclicoAccumulated(c){
-  return (c.abonos||[]).reduce((s,a)=>s+Number(a.amount||0),0);
 }
 function renderGastosReconcileItem(cat, item){
   const key = cat+':'+item.id;
@@ -1643,21 +1628,23 @@ async function onGastosAbonoDelete(key){
   render();
 }
 
-async function onGastosAddMeta(){
-  const name = (document.getElementById('gs_new_name_metas').value||'').trim();
+async function onGastosAddMeta(cat){
+  cat = cat || 'metas';
+  const name = (document.getElementById('gs_new_name_'+cat).value||'').trim();
   if(!name){ alert('Escribe un nombre.'); return; }
-  const amount = parseMoney(document.getElementById('gs_new_amount_metas').value);
+  const amount = parseMoney(document.getElementById('gs_new_amount_'+cat).value);
   if(amount<=0){ alert('El monto objetivo debe ser mayor a cero.'); return; }
-  const fecha = document.getElementById('gs_new_fecha_metas').value || null;
-  gastosMetas.push({ id:uid(), name, montoObjetivo:amount, fechaLimite:fecha, aportes:[], createdAt:Date.now() });
-  await saveGastosMetas();
-  document.getElementById('gs_new_name_metas').value = '';
-  document.getElementById('gs_new_amount_metas').value = '';
-  document.getElementById('gs_new_fecha_metas').value = '';
+  const fecha = document.getElementById('gs_new_fecha_'+cat).value || null;
+  gastosListFor(cat).push({ id:uid(), name, montoObjetivo:amount, fechaLimite:fecha, aportes:[], createdAt:Date.now() });
+  await saveGastos(cat);
+  document.getElementById('gs_new_name_'+cat).value = '';
+  document.getElementById('gs_new_amount_'+cat).value = '';
+  document.getElementById('gs_new_fecha_'+cat).value = '';
   render();
 }
-async function onGastosSaveMeta(id){
-  const meta = gastosMetas.find(x=>x.id===id);
+async function onGastosSaveMeta(key){
+  const [cat, id] = key.split(':');
+  const meta = gastosListFor(cat).find(x=>x.id===id);
   if(!meta) return;
   const name = (document.getElementById('gs_edit_name_'+id).value||'').trim();
   if(!name){ alert('El nombre no puede estar vacío.'); return; }
@@ -1667,17 +1654,21 @@ async function onGastosSaveMeta(id){
   meta.montoObjetivo = amount;
   meta.fechaLimite = document.getElementById('gs_edit_fecha_'+id).value || null;
   gastosEditingId = null;
-  await saveGastosMetas();
+  await saveGastos(cat);
   render();
 }
-async function onGastosDeleteMeta(id){
-  gastosMetas = gastosMetas.filter(x=>x.id!==id);
+async function onGastosDeleteMeta(key){
+  const [cat, id] = key.split(':');
+  const list = gastosListFor(cat);
+  const idx = list.findIndex(x=>x.id===id);
+  if(idx>=0) list.splice(idx,1);
   gastosPendingDeleteId = null;
-  await saveGastosMetas();
+  await saveGastos(cat);
   render();
 }
-async function onGastosMetaAporteAdd(id){
-  const meta = gastosMetas.find(x=>x.id===id);
+async function onGastosMetaAporteAdd(key){
+  const [cat, id] = key.split(':');
+  const meta = gastosListFor(cat).find(x=>x.id===id);
   if(!meta) return;
   const amount = parseMoney(document.getElementById('gs_meta_amount_'+id).value);
   if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
@@ -1685,15 +1676,15 @@ async function onGastosMetaAporteAdd(id){
   if(!meta.aportes) meta.aportes = [];
   meta.aportes.push({ id:uid(), amount, date });
   gastosEditingId = null;
-  await saveGastosMetas();
+  await saveGastos(cat);
   render();
 }
 async function onGastosMetaAporteDelete(key){
-  const [id, aporteId] = key.split(':');
-  const meta = gastosMetas.find(x=>x.id===id);
+  const [cat, id, aporteId] = key.split(':');
+  const meta = gastosListFor(cat).find(x=>x.id===id);
   if(!meta || !meta.aportes) return;
   meta.aportes = meta.aportes.filter(a=>a.id!==aporteId);
-  await saveGastosMetas();
+  await saveGastos(cat);
   render();
 }
 
@@ -1822,9 +1813,10 @@ function renderGastosTablaCompacta(cat, list){
       const mes = currentMonthStr();
       const hoy = todayStr();
       const abonadoEsteMes = (item._espera.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes && a.date<=hoy).reduce((s,a)=>s+Number(a.amount||0),0);
+      const programadoEsteMes = (item._espera.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes && a.date>hoy).reduce((s,a)=>s+Number(a.amount||0),0);
       return `<tr${cumplida?' style="opacity:.55;"':''}>
         <td style="text-align:left;">${circulo} ${escapeHtml(item.name)} <span style="font-size:9.5px;color:var(--muted);">(deuda)</span>${cumplida?' <span style="font-size:9.5px;">(resuelto)</span>':''}</td>
-        <td>${formatCOP(item.amount)}${abonadoEsteMes>0 ? `<div style="font-size:9.5px;color:var(--muted);font-weight:400;">real: ${formatCOP(abonadoEsteMes)}</div>` : ''}</td>
+        <td>${formatCOP(item.amount)}${abonadoEsteMes>0 ? `<div style="font-size:9.5px;color:var(--muted);font-weight:400;">real: ${formatCOP(abonadoEsteMes)}</div>` : ''}${programadoEsteMes>0 ? `<div style="font-size:9.5px;color:var(--muted);font-weight:400;">📅 programado: ${formatCOP(programadoEsteMes)}</div>` : ''}</td>
         <td>${item.dueDay?`día ${item.dueDay}`:''}</td>
         <td style="white-space:nowrap;"><button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-ver-cuota-deuda="${item.id}" title="Ver y registrar en Lo que debo">👁️</button></td>
       </tr>`;
@@ -2043,7 +2035,7 @@ function calcularAmortizacion(item){
   return { rows, saldoCapital:saldoCapitalFinal, saldoInteres:saldoInteresFinal, saldoTotal:saldoTotalFinal, sinFecha:false, cierre };
 }
 function deudaSaldoActual(cat, item){
-  if(cat==='espera' || cat==='prestamos' || cat==='ciclicos') return calcularAmortizacion(item).saldoTotal;
+  if(cat==='espera' || cat==='prestamos') return calcularAmortizacion(item).saldoTotal;
   return esperaSaldo(item);
 }
 function montoPendienteMesEspera(item){
@@ -2070,7 +2062,6 @@ function totalDeudaEnMes(mes){
 
 const LABELS_ESPERA = { montoLabel:'Monto total', abonadoLabel:'Abonado', accionLabel:'Registrar abono', icono:'💵' };
 const LABELS_PRESTAMOS = { montoLabel:'Monto prestado', abonadoLabel:'Cobrado', accionLabel:'Registrar cobro', icono:'💰' };
-const LABELS_CICLICOS = { montoLabel:'Monto total', abonadoLabel:'Aportado', accionLabel:'Registrar aporte', icono:'🐷' };
 
 function viewGastosEspera(){
   let html = `<div class="panel">
@@ -2128,42 +2119,48 @@ function metaRitmoInfo(meta){
   const pct = objetivo>0 ? Math.min(100, Math.round(aportado/objetivo*100)) : 0;
   return { objetivo, aportado, esperado, diferencia, pct };
 }
-function viewGastosMetas(){
+function viewGastosMetasLike(cat, list, title, hint){
   let html = `<div class="panel">
-    <h2>Metas</h2>
-    <div class="status-msg">Cada aporte que registres resta de tu disponible ese mes (como un ahorro que apartas). La app te dice si vas adelantado o atrasado según el tiempo que falta para la fecha límite.</div>
-    <button type="button" class="secondary" data-gastos-toggle-form="metas" style="width:100%;">${gastosFormAbierto.metas?'✕ Cerrar':'➕ Agregar meta'}</button>
-    ${gastosFormAbierto.metas ? `
+    <h2>${title}</h2>
+    <div class="status-msg">${hint}</div>
+    <button type="button" class="secondary" data-gastos-toggle-form="${cat}" style="width:100%;">${gastosFormAbierto[cat]?'✕ Cerrar':'➕ Agregar'}</button>
+    ${gastosFormAbierto[cat] ? `
     <div class="row" style="margin-top:8px;">
-      <div><input type="text" id="gs_new_name_metas" placeholder="Nombre (ej. Universidad Simón)"></div>
-      <div><input type="text" id="gs_new_amount_metas" placeholder="Monto objetivo" inputmode="numeric"></div>
+      <div><input type="text" id="gs_new_name_${cat}" placeholder="Nombre"></div>
+      <div><input type="text" id="gs_new_amount_${cat}" placeholder="Monto objetivo" inputmode="numeric"></div>
     </div>
-    <label>Fecha límite</label>
-    <input type="date" id="gs_new_fecha_metas">
-    <button type="button" class="primary" data-gastos-add-meta="1" style="width:100%;margin-top:8px;">➤ Agregar meta</button>` : ''}
+    <label>Fecha en que necesitas la plata</label>
+    <input type="date" id="gs_new_fecha_${cat}">
+    <button type="button" class="primary" data-gastos-add-meta="${cat}" style="width:100%;margin-top:8px;">➤ Agregar</button>` : ''}
   </div>`;
   html += `<div class="panel">`;
-  const sorted = gastosMetas.slice().sort((a,b)=>(a.fechaLimite||'9999').localeCompare(b.fechaLimite||'9999'));
+  const sorted = list.slice().sort((a,b)=>(a.fechaLimite||'9999').localeCompare(b.fechaLimite||'9999'));
   if(sorted.length===0){
-    html += `<div class="empty">Sin metas registradas.</div>`;
+    html += `<div class="empty">Sin registros.</div>`;
   } else {
-    html += renderGastosMetasTabla(sorted);
+    html += renderGastosMetasTabla(cat, sorted);
   }
   html += `</div>`;
   return html;
 }
-function renderGastosMetasTabla(sorted){
+function viewGastosMetas(){
+  return viewGastosMetasLike('metas', gastosMetas, 'Metas', 'Cada aporte que registres resta de tu disponible ese mes (como un ahorro que apartas). La app te dice si vas adelantado o atrasado según el tiempo que falta para la fecha límite.');
+}
+function viewGastosCiclicos(){
+  return viewGastosMetasLike('ciclicos', gastosCiclicos, 'Ahorros y Provisiones', 'Necesitas la plata para una fecha — aporta cuando puedas, sin día fijo obligatorio. La app te dice si vas adelantado o atrasado según cuánto tiempo falta para esa fecha.');
+}
+function renderGastosMetasTabla(cat, sorted){
   const rows = sorted.map(meta=>{
-    const key = 'metas:'+meta.id;
+    const key = cat+':'+meta.id;
     const isEditing = gastosEditingId===key;
     if(isEditing){
       const isConfirmingDelete = gastosPendingDeleteId === key;
       if(isConfirmingDelete){
         return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
           <div class="task-card" style="margin:0;">
-            <div class="task-meta" style="margin-bottom:8px;">⚠️ ¿Eliminar la meta "${escapeHtml(meta.name)}"? Esta acción no se puede deshacer.</div>
+            <div class="task-meta" style="margin-bottom:8px;">⚠️ ¿Eliminar "${escapeHtml(meta.name)}"? Esta acción no se puede deshacer.</div>
             <div class="icon-actions">
-              ${iconAction('complete','check','Sí, eliminar', `data-gastos-confirm-delete-meta="${meta.id}"`)}
+              ${iconAction('complete','check','Sí, eliminar', `data-gastos-confirm-delete-meta="${key}"`)}
               ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`)}
             </div>
           </div>
@@ -2175,17 +2172,17 @@ function renderGastosMetasTabla(sorted){
           <input type="text" id="gs_edit_name_${meta.id}" value="${escapeAttr(meta.name)}">
           <label>Monto objetivo</label>
           <input type="text" id="gs_edit_amount_${meta.id}" value="${meta.montoObjetivo}" inputmode="numeric">
-          <label>Fecha límite</label>
+          <label>Fecha en que necesitas la plata</label>
           <input type="date" id="gs_edit_fecha_${meta.id}" value="${meta.fechaLimite||''}">
           <div class="icon-actions" style="margin-top:8px;">
-            ${iconAction('save','save','Guardar', `data-gastos-save-meta="${meta.id}"`)}
+            ${iconAction('save','save','Guardar', `data-gastos-save-meta="${key}"`)}
             ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-            ${iconAction('delete','trash','Eliminar', `data-gastos-delete-meta="${meta.id}"`)}
+            ${iconAction('delete','trash','Eliminar', `data-gastos-delete-meta="${key}"`)}
           </div>
         </div>
       </td></tr>`;
     }
-    const isAportando = gastosEditingId === ('aportemeta:'+meta.id);
+    const isAportando = gastosEditingId === ('aportemeta:'+key);
     if(isAportando){
       return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
         <div class="task-card" style="margin:0;">
@@ -2194,13 +2191,13 @@ function renderGastosMetasTabla(sorted){
           <label>Fecha</label>
           <input type="date" id="gs_meta_date_${meta.id}" value="${todayStr()}">
           <div class="icon-actions" style="margin-top:8px;">
-            ${iconAction('save','save','Agregar', `data-meta-aporte-add="${meta.id}"`)}
+            ${iconAction('save','save','Agregar', `data-meta-aporte-add="${key}"`)}
             ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
           </div>
         </div>
       </td></tr>`;
     }
-    const isViendo = gastosEditingId === ('vermeta:'+meta.id);
+    const isViendo = gastosEditingId === ('vermeta:'+key);
     const info = metaRitmoInfo(meta);
     const completa = info.pct >= 100;
     let detailRow = '';
@@ -2217,16 +2214,16 @@ function renderGastosMetasTabla(sorted){
             <div class="task-name" style="font-size:12px;">${a.date}</div>
             <div style="display:flex;gap:6px;align-items:center;">
               <div class="task-name" style="font-size:12px;">${formatCOP(a.amount)}</div>
-              <button type="button" class="icon-btn" style="width:24px;height:24px;font-size:10px;" data-meta-aporte-delete="${meta.id}:${a.id}" title="Eliminar">🗑️</button>
+              <button type="button" class="icon-btn" style="width:24px;height:24px;font-size:10px;" data-meta-aporte-delete="${key}:${a.id}" title="Eliminar">🗑️</button>
             </div>
           </div>
         </div>`).join('') : `<div class="empty">Sin aportes todavía.</div>`;
       detailRow = `<tr><td colspan="4" style="padding:8px;background:var(--panel);">${ritmoHtml}${aportesHtml}</td></tr>`;
     }
 
-    let accionesHtml = `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-gastos-toggle-ver="vermeta:${meta.id}" title="Ver aportes">👁️</button>`;
-    if(!completa) accionesHtml += `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-meta-aporte-open="${meta.id}" title="Registrar aporte">💰</button>`;
-    accionesHtml += `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-gastos-edit-meta="${meta.id}" title="Editar">✏️</button>`;
+    let accionesHtml = `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-gastos-toggle-ver="vermeta:${key}" title="Ver aportes">👁️</button>`;
+    if(!completa) accionesHtml += `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-meta-aporte-open="${key}" title="Registrar aporte">💰</button>`;
+    accionesHtml += `<button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-gastos-edit-meta="${key}" title="Editar">✏️</button>`;
 
     const mainRow = `<tr>
       <td style="text-align:left;">${completa?'🟢':'🔴'} ${escapeHtml(meta.name)}</td>
@@ -2506,12 +2503,8 @@ function renderGastosDatedTabla(cat, sorted){
     const formConvertirAhorroHtml = isConvirtiendoAhorro ? `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
       <div class="task-card" style="margin:0;">
         <div class="status-msg">Esto mueve "${escapeHtml(item.name)}" (y sus aportes ya registrados) a "Ahorros y Provisiones", para ir apartando plata hasta reunir el total.</div>
-        <label>Cuota mensual (cuánto vas a aportar cada mes)</label>
-        <input type="text" id="gs_convertir_cuota_ahorro_${item.id}" inputmode="numeric" placeholder="Ej. 200000">
-        <label>Día del mes para aportar</label>
-        <input type="text" id="gs_convertir_diapago_ahorro_${item.id}" inputmode="numeric" placeholder="1-31" maxlength="2" style="max-width:100px;">
-        <label>Fecha en que necesitas la plata (opcional, solo de referencia)</label>
-        <input type="date" id="gs_convertir_fecha_${item.id}" value="${item.date||''}">
+        <label>Fecha en que necesitas la plata</label>
+        <input type="date" id="gs_convertir_fecha_ahorro_${item.id}" value="${item.date||''}">
         <div class="icon-actions" style="margin-top:8px;">
           ${iconAction('save','save','Convertir', `data-gastos-convertir-ahorro-save="${item.id}"`)}
           ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
@@ -2647,8 +2640,8 @@ function getAllMovimientos(){
     }
   });
   gastosCiclicos.forEach(c=>{
-    Object.keys(c.contributions||{}).forEach(mes=>{
-      movimientos.push({fecha:mes, tipo:'Ahorro', icono:'🐷', nombre:c.name, monto:c.contributions[mes], signo:-1});
+    (c.aportes||[]).forEach(a=>{
+      movimientos.push({fecha:a.date||'', tipo:'Ahorro', icono:'🐷', nombre:c.name, monto:a.amount, signo:-1});
     });
   });
   gastosExtraordinarios.forEach(e=>{
@@ -2680,7 +2673,7 @@ let gastosSaldosAbierto = {};
 function resumenAhorros(){
   const n = gastosCiclicos.length;
   if(n===0) return 'Sin ahorros configurados.';
-  const totalAcum = gastosCiclicos.reduce((s,c)=>s+ciclicoAccumulated(c),0);
+  const totalAcum = gastosCiclicos.reduce((s,c)=>s+metaAportado(c),0);
   return `${n} ahorro${n===1?'':'s'} · ${formatCOP(totalAcum)} acumulado`;
 }
 function resumenImprevistosSaldo(){
@@ -2834,11 +2827,6 @@ function calcularCalendarioMes(){
   gastosEspera.filter(e=>e.status==='Pendiente' && e.diaPago).forEach(e=>{
     addPago(e.diaPago, montoPendienteMesEspera(e), '⏳ '+e.name);
   });
-  gastosCiclicos.filter(c=>c.status==='Pendiente' && c.diaPago).forEach(c=>{
-    const abonadoEsteMes = (c.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===gastosViewMonth).reduce((s,a)=>s+Number(a.amount||0),0);
-    const falta = Math.max(0, Number(c.cuotaPactada||0) - abonadoEsteMes);
-    addPagoSinAtraso(c.diaPago, falta, '🐷 '+c.name);
-  });
   gastosIngresos.filter(i=>i.dueDay && !estaRegistrado(i, gastosViewMonth)).forEach(i=>{
     addCobro(i.dueDay, Number(i.amount||0), '💵 '+i.name);
   });
@@ -2865,13 +2853,12 @@ function viewGastosEsteMes(){
 
   const fijosHoy = gastosFijos.filter(i=>!i.isProvision && i.dueDay===todayDay && fijoEstadoMes(i, mesActual).estado!=='pagado');
   const provisionesHoy = gastosFijos.filter(i=>i.isProvision && i.dueDay===todayDay);
-  const ciclicosHoy = gastosCiclicos.filter(c=>ciclicoTocaHoy(c, mesActual, todayDay));
   const imprevistosHoy = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date===today);
   const esperaHoy = gastosEspera.filter(e=>e.status==='Pendiente' && e.diaPago===todayDay);
   const ingresosHoy = gastosIngresos.filter(i=>i.dueDay===todayDay && !estaRegistrado(i, mesActual));
   const prestamosHoy = gastosPrestamos.filter(p=>p.diaPago===todayDay && deudaSaldoActual('prestamos', p)>0);
 
-  const anyHoy = fijosHoy.length || provisionesHoy.length || ciclicosHoy.length || imprevistosHoy.length || esperaHoy.length || ingresosHoy.length || prestamosHoy.length;
+  const anyHoy = fijosHoy.length || provisionesHoy.length || imprevistosHoy.length || esperaHoy.length || ingresosHoy.length || prestamosHoy.length;
   html += `<div class="panel"><h2>🔴 Pendiente hoy</h2>`;
   if(!anyHoy){
     html += `<div class="empty">Nada pendiente para hoy — bien ahí.</div>`;
@@ -2885,11 +2872,6 @@ function viewGastosEsteMes(){
       const spent = gastosProvisionSpent(i, mesActual);
       const disponible = Number(i.amount||0) - spent;
       filasHoy += renderGastosPendingRow('🐖 '+i.name+' (revisar presupuesto)', disponible, null);
-    });
-    ciclicosHoy.forEach(c=>{
-      const abonadoEsteMes = (c.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActual).reduce((s,a)=>s+Number(a.amount||0),0);
-      const falta = Math.max(0, Number(c.cuotaPactada||0) - abonadoEsteMes);
-      filasHoy += renderGastosPendingRow('🐷 '+c.name, falta, null);
     });
     imprevistosHoy.forEach(e=>{ filasHoy += renderGastosPendingRow('⚡ '+e.name, e.amount, null); });
     esperaHoy.forEach(e=>{
@@ -2943,23 +2925,16 @@ function viewGastosEsteMes(){
   html += viewGastosSimpleList('ingresos', gastosIngresos, '💵 Ingresos', {hideMonthNav:true, hideTitleHint:true});
   html += viewGastosSimpleList('fijos', gastosFijos, '📌 Pagos Fijos', {hideMonthNav:true, hideTitleHint:true});
 
-  const ciclicosPend = gastosCiclicos.filter(c=>c.status==='Pendiente' && !ciclicosHoy.includes(c));
   const imprevistosPend = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && !imprevistosHoy.includes(e));
   const esperaPend = gastosEspera.filter(e=>e.status==='Pendiente' && !esperaHoy.includes(e) && deudaSaldoActual('espera', e)>0);
 
-  const anyPend = ciclicosPend.length || imprevistosPend.length || esperaPend.length;
+  const anyPend = imprevistosPend.length || esperaPend.length;
   html += `<div class="panel"><h2>🟡 Otros pendientes (sin importar el mes)</h2>`;
   if(!anyPend){
     html += `<div class="empty">No tienes más pagos pendientes.</div>`;
   } else {
     let totalOtros = 0;
     let filasOtros = '';
-    ciclicosPend.forEach(c=>{
-      const abonadoEsteMes = (c.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActual).reduce((s,a)=>s+Number(a.amount||0),0);
-      const falta = Math.max(0, Number(c.cuotaPactada||0) - abonadoEsteMes);
-      totalOtros += falta;
-      filasOtros += renderGastosPendingRow('🐷 '+c.name+(c.diaPago?` (día ${c.diaPago})`:''), falta, null);
-    });
     imprevistosPend.forEach(e=>{
       totalOtros += Number(e.amount||0);
       filasOtros += renderGastosPendingRow('⚡ '+e.name+(e.date?` (${e.date})`:''), e.amount, null);
@@ -2995,40 +2970,6 @@ function viewGastosEsteMes(){
   }
   html += `</div>`;
 
-  return html;
-}
-
-function viewGastosCiclicos(){
-  let html = `<div class="panel">
-    <h2>Ahorros y Provisiones</h2>
-    <div class="status-msg">Registra el monto total y ve aportando — el saldo baja hasta llegar a $0, donde se marca completo automáticamente.</div>
-    <button type="button" class="secondary" data-gastos-toggle-form="ciclicos" style="width:100%;">${gastosFormAbierto.ciclicos?'✕ Cerrar':'➕ Agregar ahorro o provisión'}</button>
-    ${gastosFormAbierto.ciclicos ? `
-    <div class="row" style="margin-top:8px;">
-      <div><input type="text" id="gs_new_name_ciclicos" placeholder="Nombre"></div>
-      <div><input type="text" id="gs_new_amount_ciclicos" placeholder="Monto total" inputmode="numeric"></div>
-    </div>
-    <label>Cuota mensual (cuánto vas a aportar cada mes)</label>
-    <input type="text" id="gs_new_cuota_ciclicos" placeholder="Ej. 200000" inputmode="numeric">
-    <label>Día del mes para aportar</label>
-    <input type="text" id="gs_new_diapago_ciclicos" inputmode="numeric" placeholder="1-31" maxlength="2" style="max-width:100px;">
-    <label>Fecha en que necesitas la plata (opcional, solo de referencia)</label>
-    <input type="date" id="gs_new_fecha_ciclicos">
-    <button type="button" class="primary" data-gastos-add="ciclicos" style="width:100%;margin-top:8px;">➤ Agregar</button>` : ''}
-  </div>`;
-  html += `<div class="panel">`;
-  const sorted = gastosCiclicos.slice().sort((a,b)=>{
-    const pa = deudaSaldoActual('ciclicos',a)<=0 ? 1 : 0;
-    const pb = deudaSaldoActual('ciclicos',b)<=0 ? 1 : 0;
-    if(pa!==pb) return pa-pb;
-    return (a.diaPago||99)-(b.diaPago||99);
-  });
-  if(sorted.length===0){
-    html += `<div class="empty">Sin registros.</div>`;
-  } else {
-    html += renderGastosDeudaTabla('ciclicos', sorted, LABELS_CICLICOS);
-  }
-  html += `</div>`;
   return html;
 }
 
@@ -3120,17 +3061,10 @@ function procesarImportacionGastos(sheets){
     return item;
   }).filter(i=>i.name);
 
-  const nuevosCiclicos = (sheets['Ahorros']||[]).map(r=>{
-    const c = {
-      id:uid(), name:String(r['Nombre']||'').trim(), amount:Number(r['Monto total'])||0,
-      diaPago: parseInt(r['Día del mes'],10)||null,
-      cuotaPactada: Number(r['Cuota mensual'])||null,
-      fechaObjetivo: r['Fecha objetivo']||null,
-      date: null, status:'Pendiente', abonos:[]
-    };
-    c.status = deudaSaldoActual('ciclicos', c) <= 0 ? 'Pagado' : 'Pendiente';
-    return c;
-  }).filter(c=>c.name);
+  const nuevosCiclicos = (sheets['Ahorros']||[]).map(r=>({
+    id:uid(), name:String(r['Nombre']||'').trim(), montoObjetivo:Number(r['Monto objetivo'])||0,
+    fechaLimite: r['Fecha límite']||null, aportes:[], createdAt:Date.now()
+  })).filter(c=>c.name);
 
   const nuevosImprevistos = (sheets['Imprevistos']||[]).map(r=>({
     id:uid(), name:String(r['Nombre']||'').trim(), amount:Number(r['Monto'])||0, date:r['Fecha']||null,
@@ -3188,7 +3122,7 @@ function procesarImportacionGastos(sheets){
       }
     } else if(tipo==='Ahorro'){
       const item = nuevosCiclicos.find(c=>c.name===nombre);
-      if(item) item.contributions[fecha]=monto;
+      if(item){ if(!item.aportes) item.aportes=[]; item.aportes.push({id:uid(), amount:monto, date:fecha}); }
       else advertencias.push(`No se encontró el ahorro "${nombre}" (aporte de ${fecha}).`);
     } else if(tipo==='Abono a deuda'){
       const item = nuevosEspera.find(e=>e.name===nombre);
@@ -3287,8 +3221,7 @@ function exportGastosExcel(){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(fijosRows), 'Pagos Fijos');
 
   const ciclicosRows = gastosCiclicos.map(c=>({
-    'Nombre':c.name||'', 'Monto total':c.amount||0,
-    'Día del mes':c.diaPago||'', 'Cuota mensual':c.cuotaPactada||'', 'Fecha objetivo':c.fechaObjetivo||'',
+    'Nombre':c.name||'', 'Monto objetivo':c.montoObjetivo||0, 'Fecha límite':c.fechaLimite||'',
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ciclicosRows), 'Ahorros');
 
@@ -3971,6 +3904,7 @@ function gastosListFor(cat){
   if(cat==='extraordinarios') return gastosExtraordinarios;
   if(cat==='espera') return gastosEspera;
   if(cat==='prestamos') return gastosPrestamos;
+  if(cat==='metas') return gastosMetas;
   return [];
 }
 function parseMoney(v){
@@ -4206,26 +4140,17 @@ async function onGastosConvertirDeuda(id){
 async function onGastosConvertirAhorro(id){
   const item = gastosExtraordinarios.find(x=>x.id===id);
   if(!item) return;
-  const cuotaEl = document.getElementById('gs_convertir_cuota_ahorro_'+id);
-  const diaPagoEl = document.getElementById('gs_convertir_diapago_ahorro_'+id);
-  const fechaEl = document.getElementById('gs_convertir_fecha_'+id);
-  const cuota = cuotaEl ? parseMoney(cuotaEl.value) : 0;
-  const diaPago = diaPagoEl ? parseInt(diaPagoEl.value,10) : NaN;
+  const fechaEl = document.getElementById('gs_convertir_fecha_ahorro_'+id);
   const fecha = fechaEl ? fechaEl.value : '';
-  if(cuota<=0){ alert('Indica la cuota mensual.'); return; }
-  if(!(diaPago>=1 && diaPago<=31)){ alert('Indica el día del mes para aportar.'); return; }
+  if(!fecha){ alert('Indica la fecha en que necesitas la plata.'); return; }
   const nuevoAhorro = {
     id: uid(),
     name: item.name,
-    amount: Number(item.amount||0),
-    diaPago,
-    cuotaPactada: cuota,
-    fechaObjetivo: fecha || null,
-    date: null,
-    status: 'Pendiente',
-    abonos: (item.abonos||[]).map(a=>({ id:a.id||uid(), amount:Number(a.monto||0), date:a.fecha||todayStr() })),
+    montoObjetivo: Number(item.amount||0),
+    fechaLimite: fecha,
+    createdAt: Date.now(),
+    aportes: (item.abonos||[]).map(a=>({ id:a.id||uid(), amount:Number(a.monto||0), date:a.fecha||todayStr() })),
   };
-  nuevoAhorro.status = deudaSaldoActual('ciclicos', nuevoAhorro) <= 0 ? 'Pagado' : 'Pendiente';
   gastosCiclicos.push(nuevoAhorro);
   gastosExtraordinarios = gastosExtraordinarios.filter(x=>x.id!==id);
   gastosEditingId = null;
