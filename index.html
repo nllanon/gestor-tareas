@@ -2673,24 +2673,6 @@ function viewGastosEsteMes(){
   }
   html += `</div>`;
 
-  const ciclicosPagados = gastosCiclicos.filter(c=>c.contributions && c.contributions[mesActual]!==undefined);
-  const imprevistosPagados = gastosExtraordinarios.filter(e=>e.status==='Pagado' && e.date && e.date.slice(0,7)===mesActual);
-  const esperaPagados = gastosEspera.filter(e=>e.status==='Pagado');
-  const prestamosCobrados = gastosPrestamos.filter(p=>p.status==='Pagado');
-
-  const anyPagado = ciclicosPagados.length || imprevistosPagados.length || esperaPagados.length || prestamosCobrados.length;
-  if(anyPagado){
-    html += `<div class="panel"><h2>✅ Ya resuelto (${monthLabel(mesActual)})</h2>`;
-    ciclicosPagados.forEach(c=>{
-      const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
-      html += renderGastosPendingRow('🐷 '+c.name, provision, null, true);
-    });
-    imprevistosPagados.forEach(e=>{ html += renderGastosPendingRow('⚡ '+e.name, e.amount, null, true); });
-    esperaPagados.forEach(e=>{ html += renderGastosPendingRow('⏳ '+e.name+' (saldado)', e.amount, null, true); });
-    prestamosCobrados.forEach(p=>{ html += renderGastosPendingRow('🤝 '+p.name+' (saldado)', p.amount, null, true); });
-    html += `</div>`;
-  }
-
   return html;
 }
 
