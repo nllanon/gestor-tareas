@@ -1753,7 +1753,8 @@ function viewGastosSimpleList(cat, list, title, opts){
   html += `</div>`;
 
   html += `<div class="panel">`;
-  if(list.length===0){
+  const listaCompleta = cat==='fijos' ? list.concat(deudasComoFijosVirtuales()) : list;
+  if(listaCompleta.length===0){
     html += `<div class="empty">Sin registros.</div>`;
   } else {
     let totalPendiente=0, totalAplazado=0, totalPagado=0;
@@ -1773,10 +1774,11 @@ function viewGastosSimpleList(cat, list, title, opts){
     html += `<div class="money-row"><span>🔴 Pendiente</span><span class="money-negative">${formatCOP(totalPendiente)}</span></div>`;
     if(cat==='fijos') html += `<div class="money-row"><span>🟡 Aplazado</span><span style="color:#a35b00;">${formatCOP(totalAplazado)}</span></div>`;
     html += `<div class="money-row" style="margin-bottom:8px;"><span>🟢 ${cat==='ingresos'?'Recibido':'Pagado'}</span><span class="money-positive">${formatCOP(totalPagado)}</span></div>`;
-    html += renderGastosTablaCompacta(cat, list);
+    html += renderGastosTablaCompacta(cat, listaCompleta);
   }
   const total = list.reduce((s,i)=> s + (i.isProvision ? gastosProvisionSpent(i, gastosViewMonth) : Number(i.amount||0)), 0);
   html += `<div class="money-row total"><span>Total</span><span>${formatCOP(total)}</span></div>`;
+  if(cat==='fijos') html += `<div class="task-meta" style="margin-top:4px;">Las filas marcadas "(deuda)" son cuotas de "Lo que debo" — se muestran aquí para que veas el mes completo, pero se editan y registran allá.</div>`;
   if(hasProvisions) html += `<div class="task-meta" style="margin-top:4px;">En las provisiones, este total suma lo que llevas gastado este mes, no el presupuesto completo.</div>`;
   html += `</div>`;
   return html;
@@ -1784,6 +1786,9 @@ function viewGastosSimpleList(cat, list, title, opts){
 
 function gastosOrdenKey(cat, item){
   const dia = item.dueDay || 32;
+  if(item._deudaCuota){
+    return [deudaCuotaEstaCumplidaEsteMes(item._espera) ? 2 : 0, dia];
+  }
   if(item.isProvision) return [1, dia];
   if(cat==='fijos'){
     const info = fijoEstadoMes(item, gastosViewMonth);
@@ -1792,6 +1797,17 @@ function gastosOrdenKey(cat, item){
   }
   return [estaRegistrado(item, gastosViewMonth) ? 2 : 0, dia];
 }
+function deudaCuotaEstaCumplidaEsteMes(e){
+  const mes = currentMonthStr();
+  const abonadoEsteMes = (e.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes).reduce((s,a)=>s+Number(a.amount||0),0);
+  return abonadoEsteMes >= Number(e.cuotaPactada||0);
+}
+function deudasComoFijosVirtuales(){
+  return gastosEspera.filter(e=>e.status==='Pendiente' && e.diaPago && e.cuotaPactada).map(e=>({
+    _deudaCuota: true, _espera: e,
+    id: e.id, name: e.name, dueDay: e.diaPago, amount: e.cuotaPactada,
+  }));
+}
 function renderGastosTablaCompacta(cat, list){
   const todayDay = new Date().getDate();
   const listaOrdenada = list.slice().sort((a,b)=>{
@@ -1799,6 +1815,18 @@ function renderGastosTablaCompacta(cat, list){
     return ka[0]-kb[0] || ka[1]-kb[1];
   });
   const rows = listaOrdenada.map(item=>{
+    if(item._deudaCuota){
+      const cumplida = deudaCuotaEstaCumplidaEsteMes(item._espera);
+      const circulo = cumplida ? '🟢' : (item.dueDay < todayDay ? '🔴' : '🟡');
+      const mes = currentMonthStr();
+      const abonadoEsteMes = (item._espera.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mes).reduce((s,a)=>s+Number(a.amount||0),0);
+      return `<tr${cumplida?' style="opacity:.55;"':''}>
+        <td style="text-align:left;">${circulo} ${escapeHtml(item.name)} <span style="font-size:9.5px;color:var(--muted);">(deuda)</span>${cumplida?' <span style="font-size:9.5px;">(resuelto)</span>':''}</td>
+        <td>${formatCOP(item.amount)}${abonadoEsteMes>0 ? `<div style="font-size:9.5px;color:var(--muted);font-weight:400;">real: ${formatCOP(abonadoEsteMes)}</div>` : ''}</td>
+        <td>${item.dueDay?`día ${item.dueDay}`:''}</td>
+        <td style="white-space:nowrap;"><button type="button" class="icon-btn" style="width:26px;height:26px;font-size:10px;" data-ver-cuota-deuda="${item.id}" title="Ver y registrar en Lo que debo">👁️</button></td>
+      </tr>`;
+    }
     const key = cat+':'+item.id;
     const isFullEditing = gastosEditingId === key;
 
@@ -3722,6 +3750,15 @@ function bindEvents(){
   });
   document.querySelectorAll('[data-gastos-resumen-toggle-detalle]').forEach(b=>{
     b.onclick = ()=>{ gastosResumenDetalleAbierto = !gastosResumenDetalleAbierto; render(); };
+  });
+  document.querySelectorAll('[data-ver-cuota-deuda]').forEach(b=>{
+    b.onclick = ()=>{
+      const id = b.getAttribute('data-ver-cuota-deuda');
+      currentTab = 'g-saldos';
+      gastosSaldosAbierto.espera = true;
+      gastosEditingId = 'verdeuda:espera:'+id;
+      render();
+    };
   });
   document.querySelectorAll('[data-gastos-toggle-calendario]').forEach(b=>{
     b.onclick = ()=>{ gastosCalendarioAbierto = !gastosCalendarioAbierto; render(); };
