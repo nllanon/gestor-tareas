@@ -1545,6 +1545,14 @@ async function onGastosRegistrarPago(key){
     if(!item.abonosParciales) item.abonosParciales = {};
     if(!item.abonosParciales[gastosViewMonth]) item.abonosParciales[gastosViewMonth] = [];
     item.abonosParciales[gastosViewMonth].push({ id:uid(), monto, fecha });
+    if(item.aplazados && item.aplazados[gastosViewMonth]){
+      const siguienteMes = addMonths(gastosViewMonth, 1);
+      if(item.arrastre && item.arrastre[siguienteMes]){
+        const reduccion = Math.min(monto, item.arrastre[siguienteMes]);
+        item.arrastre[siguienteMes] -= reduccion;
+        if(item.arrastre[siguienteMes]<=0) delete item.arrastre[siguienteMes];
+      }
+    }
     if(item.aplazados) delete item.aplazados[gastosViewMonth];
   } else {
     if(!item.registros) item.registros = {};
