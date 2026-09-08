@@ -1945,10 +1945,11 @@ function esperaSaldo(item){
 function calcularAmortizacion(item){
   const capitalInicial = Number(item.amount||0);
   const tasa = Number(item.tasaMensual||0) / 100;
-  const abonos = item.abonos || [];
+  const hoy = todayStr();
+  const abonos = (item.abonos || []).filter(a=>!a.date || a.date<=hoy);
 
   if(!item.date){
-    const abonado = esperaAbonado(item);
+    const abonado = abonos.reduce((s,a)=>s+Number(a.amount||0),0);
     const saldoCapital = Math.max(0, capitalInicial - abonado);
     return { rows: [], saldoCapital, saldoInteres: 0, saldoTotal: saldoCapital, sinFecha: true };
   }
@@ -2651,7 +2652,7 @@ function renderGastosSaldosSection(key, titulo, resumenTexto, contenidoHtml){
 }
 function viewGastosSaldos(){
   let html = `<div class="panel"><h2>Mis saldos</h2><div class="status-msg">Todo lo que tiene un saldo vivo, sin importar el mes. Toca cada categoría para abrirla.</div></div>`;
-  html += renderGastosSaldosSection('ahorros', '🐷 Ahorros', resumenAhorros(), viewGastosCiclicos());
+  html += renderGastosSaldosSection('ahorros', '🐷 Ahorros y Provisiones', resumenAhorros(), viewGastosCiclicos());
   html += renderGastosSaldosSection('imprevistos', '⚡ Imprevistos', resumenImprevistosSaldo(), viewGastosDatedList('extraordinarios', gastosExtraordinarios, '', true));
   html += renderGastosSaldosSection('espera', '⏳ Lo que debo', resumenEspera(), viewGastosEspera());
   html += renderGastosSaldosSection('prestamos', '🤝 Lo que me deben', resumenPrestamos(), viewGastosPrestamos());
@@ -2918,7 +2919,7 @@ function viewGastosEsteMes(){
 
 function viewGastosCiclicos(){
   let html = `<div class="panel">
-    <h2>Ahorros</h2>
+    <h2>Ahorros y Provisiones</h2>
     <div class="status-msg">Cada uno arma una "alcancía": aporta la provisión mensual hasta completar el monto total, y luego lo marcas como pagado.</div>
     <div class="row">
       <div><input type="text" id="gs_new_name_ciclicos" placeholder="Nombre"></div>
