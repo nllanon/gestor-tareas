@@ -285,6 +285,7 @@ let chartInstances = {};
 let gastosImportPendingData = null;
 let gastosImportConfirmPending = false;
 let gastosVistaLista = {};
+let gastosFormAbierto = {};
 let gastosSubTab = 'resumen';
 let gastosViewMonth = null;
 let gastosEditingId = null;
@@ -444,16 +445,10 @@ function renderTabs(){
   } else {
     primary = [
       ['g-resumen','📊 Resumen'],
-      ['g-dia','📅 Pagos por hacer'],
-      ['g-ingresos','💵 Ingresos'],
-      ['g-fijos','📌 Pagos Fijos'],
+      ['g-mes','📅 Este mes'],
+      ['g-saldos','💰 Mis saldos'],
     ];
     secondary = [
-      ['g-ciclicos','🐷 Ahorros'],
-      ['g-imprevistos','⚡ Imprevistos'],
-      ['g-espera','⏳ Lo que debo'],
-      ['g-prestamos','🤝 Lo que me deben'],
-      ['g-metas','🎯 Metas'],
       ['g-historial','📜 Historial'],
       ['g-datos','⚙️ Datos'],
     ];
@@ -510,14 +505,8 @@ function render(){
     else if(currentTab==='datos') c.innerHTML = viewDatos();
   } else {
     if(currentTab==='g-resumen') c.innerHTML = viewGastosResumen();
-    else if(currentTab==='g-dia') c.innerHTML = viewGastosDia();
-    else if(currentTab==='g-ingresos') c.innerHTML = viewGastosSimpleList('ingresos', gastosIngresos, 'Ingresos mensuales recurrentes');
-    else if(currentTab==='g-fijos') c.innerHTML = viewGastosSimpleList('fijos', gastosFijos, 'Pagos Fijos');
-    else if(currentTab==='g-ciclicos') c.innerHTML = viewGastosCiclicos();
-    else if(currentTab==='g-imprevistos') c.innerHTML = viewGastosDatedList('extraordinarios', gastosExtraordinarios, 'Imprevistos', true);
-    else if(currentTab==='g-espera') c.innerHTML = viewGastosEspera();
-    else if(currentTab==='g-prestamos') c.innerHTML = viewGastosPrestamos();
-    else if(currentTab==='g-metas') c.innerHTML = viewGastosMetas();
+    else if(currentTab==='g-mes') c.innerHTML = viewGastosEsteMes();
+    else if(currentTab==='g-saldos') c.innerHTML = viewGastosSaldos();
     else if(currentTab==='g-historial') c.innerHTML = viewGastosHistorial();
     else if(currentTab==='g-datos') c.innerHTML = viewGastosDatos();
   }
@@ -1674,12 +1663,17 @@ async function onGastosCerrarMes(){
   alert('Mes cerrado. '+formatCOP(disponible)+' quedó como saldo inicial de '+monthLabel(nextMonth)+'.');
 }
 
-function viewGastosSimpleList(cat, list, title){
+function viewGastosSimpleList(cat, list, title, opts){
+  opts = opts || {};
   const hasProvisions = cat==='fijos' && list.some(i=>i.isProvision);
-  let html = renderMonthNav();
-  html += `<div class="panel"><h2>${title}</h2>
-    <div class="status-msg">"Registrar ${cat==='ingresos'?'cobro':'pago'}" guarda la fecha y el monto real de ${monthLabel(gastosViewMonth)} — usa las flechas de arriba para ver otro mes.</div>
-    <div class="row">
+  let html = opts.hideMonthNav ? '' : renderMonthNav();
+  const formAbierto = !!gastosFormAbierto[cat];
+  html += `<div class="panel"><h2>${title}</h2>`;
+  if(!opts.hideTitleHint) html += `<div class="status-msg">"Registrar ${cat==='ingresos'?'cobro':'pago'}" guarda la fecha y el monto real de ${monthLabel(gastosViewMonth)} — usa las flechas de arriba para ver otro mes.</div>`;
+  html += `<button type="button" class="secondary" data-gastos-toggle-form="${cat}" style="width:100%;">${formAbierto?'✕ Cerrar':'➕ Agregar '+(cat==='ingresos'?'ingreso':'pago fijo')}</button>`;
+  if(formAbierto){
+    html += `
+    <div class="row" style="margin-top:8px;">
       <div><input type="text" id="gs_new_name_${cat}" placeholder="Nombre"></div>
       <div><input type="text" id="gs_new_amount_${cat}" placeholder="Monto" inputmode="numeric"></div>
     </div>
@@ -1690,8 +1684,9 @@ function viewGastosSimpleList(cat, list, title){
     ${cat==='ingresos' ? `
     <label>Día del mes en que esperas recibirlo (opcional, ej. 5)</label>
     <input type="text" id="gs_new_dueday_ingresos" inputmode="numeric" placeholder="1-31" maxlength="2" style="max-width:100px;">` : ''}
-    <button type="button" class="primary" data-gastos-add="${cat}" style="width:100%;margin-top:8px;">➤ Agregar</button>
-  </div>`;
+    <button type="button" class="primary" data-gastos-add="${cat}" style="width:100%;margin-top:8px;">➤ Agregar</button>`;
+  }
+  html += `</div>`;
 
   html += `<div class="panel">`;
   if(list.length===0){
@@ -2454,6 +2449,58 @@ function getAllMovimientos(){
   return movimientos;
 }
 
+let gastosSaldosAbierto = {};
+function resumenAhorros(){
+  const n = gastosCiclicos.length;
+  if(n===0) return 'Sin ahorros configurados.';
+  const totalAcum = gastosCiclicos.reduce((s,c)=>s+ciclicoAccumulated(c),0);
+  return `${n} ahorro${n===1?'':'s'} · ${formatCOP(totalAcum)} acumulado`;
+}
+function resumenImprevistosSaldo(){
+  const pendientes = gastosExtraordinarios.filter(e=>e.status==='Pendiente');
+  if(pendientes.length===0) return 'Sin imprevistos pendientes.';
+  const total = pendientes.reduce((s,e)=>s+imprevistoEstado(e).saldo,0);
+  return `${pendientes.length} pendiente${pendientes.length===1?'':'s'} · ${formatCOP(total)} por pagar`;
+}
+function resumenEspera(){
+  const pendientes = gastosEspera.filter(e=>e.status==='Pendiente');
+  if(pendientes.length===0) return 'Sin deudas pendientes.';
+  const total = pendientes.reduce((s,e)=>s+deudaSaldoActual('espera',e),0);
+  return `${pendientes.length} deuda${pendientes.length===1?'':'s'} · ${formatCOP(total)} pendientes`;
+}
+function resumenPrestamos(){
+  const pendientes = gastosPrestamos.filter(p=>deudaSaldoActual('prestamos',p)>0);
+  if(pendientes.length===0) return 'Nada por cobrar.';
+  const total = pendientes.reduce((s,p)=>s+deudaSaldoActual('prestamos',p),0);
+  return `${pendientes.length} préstamo${pendientes.length===1?'':'s'} · ${formatCOP(total)} por cobrar`;
+}
+function resumenMetas(){
+  const n = gastosMetas.length;
+  if(n===0) return 'Sin metas creadas.';
+  return `${n} meta${n===1?'':'s'} activa${n===1?'':'s'}`;
+}
+function renderGastosSaldosSection(key, titulo, resumenTexto, contenidoHtml){
+  const abierto = !!gastosSaldosAbierto[key];
+  let html = `<div class="panel" data-gastos-saldos-toggle="${key}" style="cursor:pointer;">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <h2 style="margin:0;">${titulo}</h2>
+      <span style="font-size:16px;color:var(--muted);">${abierto?'▾ cerrar':'▸ ver'}</span>
+    </div>
+    ${!abierto ? `<div class="task-meta" style="margin-top:4px;">${resumenTexto}</div>` : ''}
+  </div>`;
+  if(abierto) html += contenidoHtml;
+  return html;
+}
+function viewGastosSaldos(){
+  let html = `<div class="panel"><h2>Mis saldos</h2><div class="status-msg">Todo lo que tiene un saldo vivo, sin importar el mes. Toca cada categoría para abrirla.</div></div>`;
+  html += renderGastosSaldosSection('ahorros', '🐷 Ahorros', resumenAhorros(), viewGastosCiclicos());
+  html += renderGastosSaldosSection('imprevistos', '⚡ Imprevistos', resumenImprevistosSaldo(), viewGastosDatedList('extraordinarios', gastosExtraordinarios, '', true));
+  html += renderGastosSaldosSection('espera', '⏳ Lo que debo', resumenEspera(), viewGastosEspera());
+  html += renderGastosSaldosSection('prestamos', '🤝 Lo que me deben', resumenPrestamos(), viewGastosPrestamos());
+  html += renderGastosSaldosSection('metas', '🎯 Metas', resumenMetas(), viewGastosMetas());
+  return html;
+}
+
 function viewGastosDatos(){
   let html = `<div class="panel">
     <h2>Datos de Gastos</h2>
@@ -2516,59 +2563,19 @@ function viewGastosHistorial(){
   return html;
 }
 
-function viewGastosDia(){
+function viewGastosEsteMes(){
   const today = todayStr();
   const todayDay = new Date().getDate();
   const mesActual = currentMonthStr();
-  let html = `<div class="panel"><h2>Pagos por hacer</h2><div class="status-msg">Lo que vence hoy, y todo lo demás que sigue pendiente de pagar o cobrar.</div></div>`;
+  let html = renderMonthNav();
+  html += `<div class="panel"><h2>Este mes</h2><div class="status-msg">Todo lo que entra y sale este mes. Ingresos y Pagos Fijos se crean y registran aquí mismo.</div></div>`;
+
+  html += viewGastosSimpleList('ingresos', gastosIngresos, '💵 Ingresos', {hideMonthNav:true, hideTitleHint:true});
+  html += viewGastosSimpleList('fijos', gastosFijos, '📌 Pagos Fijos (por día)', {hideMonthNav:true, hideTitleHint:true});
 
   const ciclicosHoy = gastosCiclicos.filter(c=>c.nextDueDate===today);
   const imprevistosHoy = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date===today);
-  const esperaVencidosAtras = gastosEspera.filter(e=>e.status==='Pendiente' && e.date && e.date < today && !e.diaPago);
   const esperaHoy = gastosEspera.filter(e=>e.status==='Pendiente' && e.diaPago===todayDay);
-
-  // ---------- Pagos Fijos: lista propia, ordenada Pendiente -> Aplazado -> Pagado ----------
-  const fijosYProvisiones = gastosFijos.filter(i=>!!i.dueDay).map(i=>{
-    return { item:i, dia:i.dueDay };
-  }).sort((a,b)=>a.dia-b.dia);
-  const fijosSinDia = gastosFijos.filter(i=>!i.isProvision && !i.dueDay).map(i=>({item:i, dia:32}));
-  const todosOrdenados = [...fijosYProvisiones, ...fijosSinDia];
-
-  html += `<div class="panel"><h2>📌 Pagos Fijos (por día)</h2>`;
-  if(todosOrdenados.length===0){
-    html += `<div class="empty">No tienes pagos fijos registrados.</div>`;
-  } else {
-    todosOrdenados.forEach(({item})=>{
-      if(item.isProvision){
-        const spent = gastosProvisionSpent(item, mesActual);
-        const plan = Number(item.amount||0);
-        const disponible = plan - spent;
-        const esHoy = item.dueDay===todayDay;
-        html += `<div class="task-card">
-          <div class="task-top">
-            <div class="task-name">${esHoy?'🟡':'⚪'} 🐖 ${escapeHtml(item.name)} <span style="color:var(--muted);font-weight:400;font-size:11px;">(día ${item.dueDay})</span></div>
-            <div class="task-name ${disponible>=0?'money-positive':'money-negative'}">${formatCOP(disponible)}</div>
-          </div>
-          <div class="task-meta">Disponible este mes${esHoy?' — hoy toca revisar':''}</div>
-        </div>`;
-        return;
-      }
-      const info = fijoEstadoMes(item, mesActual);
-      const circulo = info.estado==='pagado' ? '🟢' : (info.estado==='aplazado' ? '🟡' : '🔴');
-      let estado;
-      if(info.estado==='pagado') estado = `Pagado${info.fecha?' el '+info.fecha:''}`;
-      else if(info.estado==='aplazado') estado = `Aplazado — quedan ${formatCOP(info.saldo)} para el próximo mes`;
-      else estado = (item.dueDay ? `Pendiente (día ${item.dueDay})` : 'Pendiente') + (info.abonado>0?` — abonado ${formatCOP(info.abonado)}`:'');
-      html += `<div class="task-card ${info.estado==='pagado'?'status-terminada':''}">
-        <div class="task-top">
-          <div class="task-name">${circulo} ${escapeHtml(item.name)}</div>
-          <div class="task-name">${formatCOP(info.debido)}</div>
-        </div>
-        <div class="task-meta">${estado}</div>
-      </div>`;
-    });
-  }
-  html += `</div>`;
 
   const anyHoy = ciclicosHoy.length || imprevistosHoy.length || esperaHoy.length;
   html += `<div class="panel"><h2>🔴 Vence hoy</h2>`;
@@ -2580,7 +2587,7 @@ function viewGastosDia(){
     ciclicosHoy.forEach(c=>{
       const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
       totalHoy += provision;
-      filasHoy += renderGastosPendingRow('🐷 '+c.name, provision, {type:'ciclico', id:c.id, month:mesActual});
+      filasHoy += renderGastosPendingRow('🐷 '+c.name, provision, null);
     });
     imprevistosHoy.forEach(e=>{
       totalHoy += Number(e.amount||0);
@@ -2589,7 +2596,7 @@ function viewGastosDia(){
     esperaHoy.forEach(e=>{
       const saldoE = deudaSaldoActual('espera', e);
       totalHoy += saldoE;
-      filasHoy += renderGastosPendingRow('⏳ '+e.name+' (día '+e.diaPago+')', saldoE, {type:'espera', id:e.id});
+      filasHoy += renderGastosPendingRow('⏳ '+e.name+' (día '+e.diaPago+')', saldoE, null);
     });
     html += `<div class="money-row total"><span>Total de hoy</span><span class="money-negative">${formatCOP(totalHoy)}</span></div>${filasHoy}`;
   }
@@ -2600,7 +2607,7 @@ function viewGastosDia(){
   const esperaPend = gastosEspera.filter(e=>e.status==='Pendiente' && !esperaHoy.includes(e) && deudaSaldoActual('espera', e)>0);
 
   const anyPend = ciclicosPend.length || imprevistosPend.length || esperaPend.length;
-  html += `<div class="panel"><h2>🟡 Otros pendientes</h2>`;
+  html += `<div class="panel"><h2>🟡 Otros pendientes (sin importar el mes)</h2>`;
   if(!anyPend){
     html += `<div class="empty">No tienes más pagos pendientes.</div>`;
   } else {
@@ -2609,7 +2616,7 @@ function viewGastosDia(){
     ciclicosPend.forEach(c=>{
       const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
       totalOtros += provision;
-      filasOtros += renderGastosPendingRow('🐷 '+c.name+(c.nextDueDate?` (próx. ${c.nextDueDate})`:''), provision, {type:'ciclico', id:c.id, month:mesActual});
+      filasOtros += renderGastosPendingRow('🐷 '+c.name+(c.nextDueDate?` (próx. ${c.nextDueDate})`:''), provision, null);
     });
     imprevistosPend.forEach(e=>{
       totalOtros += Number(e.amount||0);
@@ -2618,72 +2625,43 @@ function viewGastosDia(){
     esperaPend.forEach(e=>{
       const saldoE = deudaSaldoActual('espera', e);
       totalOtros += saldoE;
-      filasOtros += renderGastosPendingRow('⏳ '+e.name+(e.diaPago?` (día ${e.diaPago})`:' (sin día de pago fijo — agrégaselo si quieres verlo aquí)'), saldoE, {type:'espera', id:e.id});
+      filasOtros += renderGastosPendingRow('⏳ '+e.name+(e.diaPago?` (día ${e.diaPago})`:' (sin día de pago fijo)'), saldoE, null);
     });
     html += `<div class="money-row total"><span>Total otros pendientes</span><span class="money-negative">${formatCOP(totalOtros)}</span></div>${filasOtros}`;
   }
   html += `</div>`;
 
-  // ---------- Por cobrar ----------
-  const ingresosHoy = gastosIngresos.filter(i=>i.dueDay===todayDay && !estaRegistrado(i, mesActual));
   const prestamosHoy = gastosPrestamos.filter(p=>p.diaPago===todayDay && deudaSaldoActual('prestamos', p)>0);
-  const anyCobrarHoy = ingresosHoy.length || prestamosHoy.length;
-  html += `<div class="panel"><h2>💰 Por cobrar hoy</h2>`;
-  if(!anyCobrarHoy){
-    html += `<div class="empty">Nada que cobrar hoy.</div>`;
+  const prestamosPendCobro = gastosPrestamos.filter(p=>!prestamosHoy.includes(p) && deudaSaldoActual('prestamos', p)>0);
+  const anyCobrar = prestamosHoy.length || prestamosPendCobro.length;
+  html += `<div class="panel"><h2>🤝 Cobros de préstamos pendientes</h2>`;
+  if(!anyCobrar){
+    html += `<div class="empty">No tienes cobros pendientes.</div>`;
   } else {
-    let totalCobrarHoy = 0;
-    let filasCobrarHoy = '';
-    ingresosHoy.forEach(i=>{
-      const info = gastosMonthlyInfo('ingresos', i, mesActual);
-      totalCobrarHoy += info.plan;
-      filasCobrarHoy += renderGastosPendingRow('💵 '+i.name, info.plan, {type:'ingreso', id:i.id, month:mesActual});
-    });
+    let totalCobrar = 0;
+    let filasCobrar = '';
     prestamosHoy.forEach(p=>{
       const saldoP = deudaSaldoActual('prestamos', p);
-      totalCobrarHoy += saldoP;
-      filasCobrarHoy += renderGastosPendingRow('🤝 '+p.name+' (día '+p.diaPago+')', saldoP, {type:'prestamo', id:p.id});
-    });
-    html += `<div class="money-row total"><span>Total por cobrar hoy</span><span class="money-positive">+${formatCOP(totalCobrarHoy)}</span></div>${filasCobrarHoy}`;
-  }
-  html += `</div>`;
-
-  const ingresosPendCobro = gastosIngresos.filter(i=>!ingresosHoy.includes(i) && !estaRegistrado(i, mesActual));
-  const prestamosPendCobro = gastosPrestamos.filter(p=>!prestamosHoy.includes(p) && deudaSaldoActual('prestamos', p)>0);
-  const anyPendCobro = ingresosPendCobro.length || prestamosPendCobro.length;
-  html += `<div class="panel"><h2>🟢 Otros por cobrar</h2>`;
-  if(!anyPendCobro){
-    html += `<div class="empty">No tienes más cobros pendientes.</div>`;
-  } else {
-    let totalPendCobro = 0;
-    let filasPendCobro = '';
-    ingresosPendCobro.forEach(i=>{
-      const info = gastosMonthlyInfo('ingresos', i, mesActual);
-      totalPendCobro += info.plan;
-      filasPendCobro += renderGastosPendingRow('💵 '+i.name+(i.dueDay?` (día ${i.dueDay})`:''), info.plan, {type:'ingreso', id:i.id, month:mesActual});
+      totalCobrar += saldoP;
+      filasCobrar += renderGastosPendingRow('🤝 '+p.name+' (hoy, día '+p.diaPago+')', saldoP, null);
     });
     prestamosPendCobro.forEach(p=>{
       const saldoP = deudaSaldoActual('prestamos', p);
-      totalPendCobro += saldoP;
-      filasPendCobro += renderGastosPendingRow('🤝 '+p.name+(p.diaPago?` (día ${p.diaPago})`:' (sin día de pago fijo)'), saldoP, {type:'prestamo', id:p.id});
+      totalCobrar += saldoP;
+      filasCobrar += renderGastosPendingRow('🤝 '+p.name+(p.diaPago?` (día ${p.diaPago})`:' (sin día fijo)'), saldoP, null);
     });
-    html += `<div class="money-row total"><span>Total otros por cobrar</span><span class="money-positive">+${formatCOP(totalPendCobro)}</span></div>${filasPendCobro}`;
+    html += `<div class="money-row total"><span>Total por cobrar</span><span class="money-positive">+${formatCOP(totalCobrar)}</span></div>${filasCobrar}`;
   }
   html += `</div>`;
 
   const ciclicosPagados = gastosCiclicos.filter(c=>c.contributions && c.contributions[mesActual]!==undefined);
   const imprevistosPagados = gastosExtraordinarios.filter(e=>e.status==='Pagado' && e.date && e.date.slice(0,7)===mesActual);
   const esperaPagados = gastosEspera.filter(e=>e.status==='Pagado');
-  const ingresosRecibidos = gastosIngresos.filter(i=>estaRegistrado(i, mesActual));
   const prestamosCobrados = gastosPrestamos.filter(p=>p.status==='Pagado');
 
-  const anyPagado = ciclicosPagados.length || imprevistosPagados.length || esperaPagados.length || ingresosRecibidos.length || prestamosCobrados.length;
+  const anyPagado = ciclicosPagados.length || imprevistosPagados.length || esperaPagados.length || prestamosCobrados.length;
   if(anyPagado){
-    html += `<div class="panel"><h2>✅ Ya pagado / cobrado (${monthLabel(mesActual)})</h2>`;
-    ingresosRecibidos.forEach(i=>{
-      const info = gastosMonthlyInfo('ingresos', i, mesActual);
-      html += renderGastosPendingRow('💵 '+i.name, info.real, null, true);
-    });
+    html += `<div class="panel"><h2>✅ Ya resuelto (${monthLabel(mesActual)})</h2>`;
     ciclicosPagados.forEach(c=>{
       const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
       html += renderGastosPendingRow('🐷 '+c.name, provision, null, true);
@@ -3288,6 +3266,20 @@ function bindEvents(){
   });
   document.querySelectorAll('[data-gastos-add]').forEach(b=>{
     b.onclick = ()=>onGastosAdd(b.getAttribute('data-gastos-add'));
+  });
+  document.querySelectorAll('[data-gastos-toggle-form]').forEach(b=>{
+    b.onclick = ()=>{
+      const cat = b.getAttribute('data-gastos-toggle-form');
+      gastosFormAbierto[cat] = !gastosFormAbierto[cat];
+      render();
+    };
+  });
+  document.querySelectorAll('[data-gastos-saldos-toggle]').forEach(el=>{
+    el.onclick = ()=>{
+      const key = el.getAttribute('data-gastos-saldos-toggle');
+      gastosSaldosAbierto[key] = !gastosSaldosAbierto[key];
+      render();
+    };
   });
   document.querySelectorAll('[data-gastos-edit]').forEach(b=>{
     b.onclick = ()=>{ gastosEditingId = b.getAttribute('data-gastos-edit'); gastosPendingDeleteId=null; render(); };
