@@ -321,6 +321,28 @@ let pendingImportText = '';
 let importConfirmPending = false;
 let importWarnings = [];
 
+function migrarCiclicoAntiguo(c){
+  if(c.periodMonths===undefined) return c;
+  const diaPago = c.nextDueDate ? Number(c.nextDueDate.slice(8,10)) : null;
+  const cuotaPactada = Math.round(Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1)));
+  const abonos = [];
+  Object.keys(c.contributions||{}).forEach(mes=>{
+    const monto = Number(c.contributions[mes]||0);
+    if(monto>0){
+      const dia = diaPago || 1;
+      abonos.push({ id: uid(), amount: monto, date: mes+'-'+String(dia).padStart(2,'0') });
+    }
+  });
+  return {
+    id: c.id,
+    name: c.name,
+    amount: Number(c.totalAmount||0),
+    diaPago: diaPago,
+    cuotaPactada: cuotaPactada>0 ? cuotaPactada : null,
+    fechaObjetivo: c.nextDueDate || null,
+    abonos,
+  };
+}
 // ======================================================
 // CONFIGURACIÓN DE SUPABASE — ya configurado para TareasNico
 // ======================================================
@@ -355,6 +377,16 @@ async function loadData(){
   try{ gastosIngresos = (await kvGet('gastos_ingresos')) || []; }catch(e){ console.error('Error cargando gastos_ingresos', e); gastosIngresos = []; }
   try{ gastosFijos = (await kvGet('gastos_fijos')) || []; }catch(e){ console.error('Error cargando gastos_fijos', e); gastosFijos = []; }
   try{ gastosCiclicos = (await kvGet('gastos_ciclicos')) || []; }catch(e){ console.error('Error cargando gastos_ciclicos', e); gastosCiclicos = []; }
+  let ciclicosMigrados = false;
+  gastosCiclicos = gastosCiclicos.map(c=>{
+    if(c.periodMonths===undefined) return c;
+    ciclicosMigrados = true;
+    return migrarCiclicoAntiguo(c);
+  });
+  gastosCiclicos.forEach(c=>{
+    c.status = deudaSaldoActual('ciclicos', c) <= 0 ? 'Pagado' : 'Pendiente';
+  });
+  if(ciclicosMigrados){ try{ await saveGastos('ciclicos'); }catch(e){} }
   try{ gastosExtraordinarios = (await kvGet('gastos_extraordinarios')) || []; }catch(e){ console.error('Error cargando gastos_extraordinarios', e); gastosExtraordinarios = []; }
   try{ gastosEspera = (await kvGet('gastos_espera')) || []; }catch(e){ console.error('Error cargando gastos_espera', e); gastosEspera = []; }
   try{ gastosPrestamos = (await kvGet('gastos_prestamos')) || []; }catch(e){ console.error('Error cargando gastos_prestamos', e); gastosPrestamos = []; }
@@ -481,10 +513,10 @@ function renderTabs(){
 }
 
 function ciclicoTocaHoy(c, mesActual, todayDay){
-  if(!c.nextDueDate) return false;
-  const dia = Number(c.nextDueDate.slice(8,10));
-  const contribDone = c.contributions && c.contributions[mesActual]!==undefined;
-  return dia===todayDay && !contribDone;
+  if(!c.diaPago || c.diaPago!==todayDay) return false;
+  if(deudaSaldoActual('ciclicos', c) <= 0) return false;
+  const abonadoEsteMes = (c.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActual).reduce((s,a)=>s+Number(a.amount||0),0);
+  return abonadoEsteMes < Number(c.cuotaPactada||0);
 }
 function resumenHoyGastos(){
   const today = todayStr();
@@ -499,7 +531,10 @@ function resumenHoyGastos(){
 
   let totalPagar = 0;
   fijosHoy.forEach(i=>{ totalPagar += fijoEstadoMes(i, mesActual).debido; });
-  ciclicosHoy.forEach(c=>{ totalPagar += Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1)); });
+  ciclicosHoy.forEach(c=>{
+    const abonadoEsteMes = (c.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActual).reduce((s,a)=>s+Number(a.amount||0),0);
+    totalPagar += Math.max(0, Number(c.cuotaPactada||0) - abonadoEsteMes);
+  });
   imprevistosHoy.forEach(e=>{ totalPagar += Number(e.amount||0); });
   esperaHoy.forEach(e=>{ totalPagar += montoPendienteMesEspera(e); });
 
@@ -1373,9 +1408,9 @@ function fijoEstadoMes(item, mes){
 }
 function gastosMonthlyInfo(cat, item, month){
   if(cat==='ciclicos'){
-    const plan = Number(item.totalAmount||0)/Math.max(1,Number(item.periodMonths||1));
-    const contrib = (item.contributions && item.contributions[month]!==undefined) ? item.contributions[month] : null;
-    return { plan, real: contrib!==null?contrib:0, confirmed: contrib!==null };
+    const plan = Number(item.cuotaPactada||0);
+    const abonadoEsteMes = (item.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===month).reduce((s,a)=>s+Number(a.amount||0),0);
+    return { plan, real: abonadoEsteMes, confirmed: plan>0 && abonadoEsteMes>=plan };
   }
   if(cat==='fijos'){
     if(item.isProvision){
@@ -1411,12 +1446,7 @@ function gastosResetMonthly(cat, item, month){
   }
 }
 function ciclicoAccumulated(c){
-  const contrib = c.contributions || {};
-  let sum = Object.values(contrib).reduce((s,v)=>s+Number(v||0),0);
-  if((!c.contributions || Object.keys(c.contributions).length===0) && c.accumulated){
-    sum += Number(c.accumulated||0);
-  }
-  return sum;
+  return (c.abonos||[]).reduce((s,a)=>s+Number(a.amount||0),0);
 }
 function renderGastosReconcileItem(cat, item){
   const key = cat+':'+item.id;
@@ -1983,7 +2013,7 @@ function calcularAmortizacion(item){
   return { rows, saldoCapital:saldoCapitalFinal, saldoInteres:saldoInteresFinal, saldoTotal:saldoTotalFinal, sinFecha:false, cierre };
 }
 function deudaSaldoActual(cat, item){
-  if(cat==='espera' || cat==='prestamos') return calcularAmortizacion(item).saldoTotal;
+  if(cat==='espera' || cat==='prestamos' || cat==='ciclicos') return calcularAmortizacion(item).saldoTotal;
   return esperaSaldo(item);
 }
 function montoPendienteMesEspera(item){
@@ -2010,6 +2040,7 @@ function totalDeudaEnMes(mes){
 
 const LABELS_ESPERA = { montoLabel:'Monto total', abonadoLabel:'Abonado', accionLabel:'Registrar abono', icono:'💵' };
 const LABELS_PRESTAMOS = { montoLabel:'Monto prestado', abonadoLabel:'Cobrado', accionLabel:'Registrar cobro', icono:'💰' };
+const LABELS_CICLICOS = { montoLabel:'Monto total', abonadoLabel:'Aportado', accionLabel:'Registrar aporte', icono:'🐷' };
 
 function viewGastosEspera(){
   let html = `<div class="panel">
@@ -2241,14 +2272,17 @@ function renderGastosDeudaTabla(cat, sorted, labels){
           <input type="text" id="gs_edit_name_${item.id}" value="${escapeAttr(item.name)}">
           <label>${labels.montoLabel}</label>
           <input type="text" id="gs_edit_amount_${item.id}" value="${item.amount}" inputmode="numeric">
+          ${cat!=='ciclicos' ? `
           <label>Fecha</label>
           <input type="date" id="gs_edit_date_${item.id}" value="${item.date||''}">
           <label>Tasa de interés mensual (0 si no tiene)</label>
-          <input type="text" id="gs_edit_tasa_${item.id}" value="${item.tasaMensual||0}" inputmode="decimal">
-          <label>Día del mes en que ${cat==='espera'?'la pagas':'te lo pagan'} (opcional)</label>
+          <input type="text" id="gs_edit_tasa_${item.id}" value="${item.tasaMensual||0}" inputmode="decimal">` : ''}
+          <label>Día del mes en que ${cat==='espera'?'la pagas':(cat==='prestamos'?'te lo pagan':'aportas')} (opcional)</label>
           <input type="text" id="gs_edit_diapago_${item.id}" value="${item.diaPago||''}" inputmode="numeric" maxlength="2" style="max-width:100px;">
-          ${cat==='espera' ? `<label>Cuota mensual pactada (opcional)</label>
+          ${(cat==='espera'||cat==='ciclicos') ? `<label>Cuota mensual pactada${cat==='ciclicos'?'':' (opcional)'}</label>
           <input type="text" id="gs_edit_cuota_${item.id}" value="${item.cuotaPactada||''}" placeholder="Ej. 500000" inputmode="numeric">` : ''}
+          ${cat==='ciclicos' ? `<label>Fecha en que necesitas la plata (opcional, solo de referencia)</label>
+          <input type="date" id="gs_edit_fecha_${item.id}" value="${item.fechaObjetivo||''}">` : ''}
           <div class="icon-actions" style="margin-top:8px;">
             ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
             ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
@@ -2263,7 +2297,7 @@ function renderGastosDeudaTabla(cat, sorted, labels){
         <div class="task-card" style="margin:0;">
           <label>Monto</label>
           <input type="text" id="gs_abono_amount_${item.id}" placeholder="Monto" inputmode="numeric">
-          <label>Fecha del ${cat==='espera'?'abono':'cobro'}</label>
+          <label>Fecha del ${cat==='espera'?'abono':(cat==='ciclicos'?'aporte':'cobro')}</label>
           <input type="date" id="gs_abono_date_${item.id}" value="${todayStr()}">
           <div class="icon-actions" style="margin-top:8px;">
             ${iconAction('save','save','Agregar', `data-gastos-abono-add="${cat}:${item.id}"`)}
@@ -2288,14 +2322,16 @@ function renderGastosDeudaTabla(cat, sorted, labels){
     if(isViendo){
       const abonos = (item.abonos||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
       let cuotaHtml = '';
-      if(cat==='espera' && item.cuotaPactada){
+      if((cat==='espera'||cat==='ciclicos') && item.cuotaPactada){
         const mesActualCuota = currentMonthStr();
         const abonadoEsteMes = (item.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActualCuota).reduce((s,a)=>s+Number(a.amount||0),0);
         const faltante = Number(item.cuotaPactada) - abonadoEsteMes;
         const cumplida = faltante <= 0;
         cuotaHtml = `<div class="task-meta" style="margin-bottom:6px;"><span class="${cumplida?'money-positive':'money-negative'}">${cumplida?'🟢':'🟠'} Cuota de ${monthLabel(mesActualCuota)}: pactada ${formatCOP(item.cuotaPactada)}, llevas ${formatCOP(abonadoEsteMes)}${cumplida?' — cumplida':` — te faltan ${formatCOP(faltante)}`}</span></div>`;
       }
-      const detalleInteresHtml = `<div class="task-meta" style="margin-bottom:6px;">Capital pendiente: ${formatCOP(amort.saldoCapital)}${item.tasaMensual?` · Interés pendiente: ${formatCOP(amort.saldoInteres)}`:''}${item.tasaMensual?` · Tasa: ${item.tasaMensual}% mensual`:''}${item.diaPago?` · día ${item.diaPago} de cada mes`:''}${amort.sinFecha?' · (agrega fecha para ver tabla)':''}</div>`;
+      const detalleInteresHtml = cat==='ciclicos'
+        ? `<div class="task-meta" style="margin-bottom:6px;">${item.diaPago?`Día ${item.diaPago} de cada mes`:''}${item.fechaObjetivo?` · Necesitas la plata el ${item.fechaObjetivo}`:''}</div>`
+        : `<div class="task-meta" style="margin-bottom:6px;">Capital pendiente: ${formatCOP(amort.saldoCapital)}${item.tasaMensual?` · Interés pendiente: ${formatCOP(amort.saldoInteres)}`:''}${item.tasaMensual?` · Tasa: ${item.tasaMensual}% mensual`:''}${item.diaPago?` · día ${item.diaPago} de cada mes`:''}${amort.sinFecha?' · (agrega fecha para ver tabla)':''}</div>`;
       const verTablaBtn = (!amort.sinFecha) ? `<button type="button" class="secondary" data-ver-tabla="${item.id}" data-ver-tabla-cat="${cat}" style="width:100%;margin-bottom:8px;">📈 Ver tabla de amortización</button>` : '';
       const abonosHtml = abonos.length ? abonos.map(a=>`
         <div class="task-card" style="padding:6px 8px;margin-bottom:4px;">
@@ -2306,7 +2342,7 @@ function renderGastosDeudaTabla(cat, sorted, labels){
               <button type="button" class="icon-btn" style="width:24px;height:24px;font-size:10px;" data-gastos-abono-delete="${cat}:${item.id}:${a.id}" title="Eliminar">🗑️</button>
             </div>
           </div>
-        </div>`).join('') : `<div class="empty">Sin ${cat==='espera'?'abonos':'cobros'} todavía.</div>`;
+        </div>`).join('') : `<div class="empty">Sin ${cat==='espera'?'abonos':(cat==='ciclicos'?'aportes':'cobros')} todavía.</div>`;
       detailRow = `<tr><td colspan="4" style="padding:8px;background:var(--panel);">${detalleInteresHtml}${cuotaHtml}${verTablaBtn}${abonosHtml}</td></tr>`;
     }
 
@@ -2440,9 +2476,11 @@ function renderGastosDatedTabla(cat, sorted){
     const formConvertirAhorroHtml = isConvirtiendoAhorro ? `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
       <div class="task-card" style="margin:0;">
         <div class="status-msg">Esto mueve "${escapeHtml(item.name)}" (y sus aportes ya registrados) a "Ahorros y Provisiones", para ir apartando plata hasta reunir el total.</div>
-        <label>Cada cuántos meses (ej. 6, 12)</label>
-        <input type="text" id="gs_convertir_periodo_${item.id}" inputmode="numeric" placeholder="Ej. 12">
-        <label>Fecha en que necesitas la plata</label>
+        <label>Cuota mensual (cuánto vas a aportar cada mes)</label>
+        <input type="text" id="gs_convertir_cuota_ahorro_${item.id}" inputmode="numeric" placeholder="Ej. 200000">
+        <label>Día del mes para aportar</label>
+        <input type="text" id="gs_convertir_diapago_ahorro_${item.id}" inputmode="numeric" placeholder="1-31" maxlength="2" style="max-width:100px;">
+        <label>Fecha en que necesitas la plata (opcional, solo de referencia)</label>
         <input type="date" id="gs_convertir_fecha_${item.id}" value="${item.date||''}">
         <div class="icon-actions" style="margin-top:8px;">
           ${iconAction('save','save','Convertir', `data-gastos-convertir-ahorro-save="${item.id}"`)}
@@ -2766,9 +2804,10 @@ function calcularCalendarioMes(){
   gastosEspera.filter(e=>e.status==='Pendiente' && e.diaPago).forEach(e=>{
     addPago(e.diaPago, montoPendienteMesEspera(e), '⏳ '+e.name);
   });
-  gastosCiclicos.filter(c=>c.nextDueDate && !(c.contributions && c.contributions[gastosViewMonth]!==undefined)).forEach(c=>{
-    const prov = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
-    addPagoSinAtraso(Number(c.nextDueDate.slice(8,10)), prov, '🐷 '+c.name);
+  gastosCiclicos.filter(c=>c.status==='Pendiente' && c.diaPago).forEach(c=>{
+    const abonadoEsteMes = (c.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===gastosViewMonth).reduce((s,a)=>s+Number(a.amount||0),0);
+    const falta = Math.max(0, Number(c.cuotaPactada||0) - abonadoEsteMes);
+    addPagoSinAtraso(c.diaPago, falta, '🐷 '+c.name);
   });
   gastosIngresos.filter(i=>i.dueDay && !estaRegistrado(i, gastosViewMonth)).forEach(i=>{
     addCobro(i.dueDay, Number(i.amount||0), '💵 '+i.name);
@@ -2818,8 +2857,9 @@ function viewGastosEsteMes(){
       filasHoy += renderGastosPendingRow('🐖 '+i.name+' (revisar presupuesto)', disponible, null);
     });
     ciclicosHoy.forEach(c=>{
-      const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
-      filasHoy += renderGastosPendingRow('🐷 '+c.name, provision, null);
+      const abonadoEsteMes = (c.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActual).reduce((s,a)=>s+Number(a.amount||0),0);
+      const falta = Math.max(0, Number(c.cuotaPactada||0) - abonadoEsteMes);
+      filasHoy += renderGastosPendingRow('🐷 '+c.name, falta, null);
     });
     imprevistosHoy.forEach(e=>{ filasHoy += renderGastosPendingRow('⚡ '+e.name, e.amount, null); });
     esperaHoy.forEach(e=>{
@@ -2873,7 +2913,7 @@ function viewGastosEsteMes(){
   html += viewGastosSimpleList('ingresos', gastosIngresos, '💵 Ingresos', {hideMonthNav:true, hideTitleHint:true});
   html += viewGastosSimpleList('fijos', gastosFijos, '📌 Pagos Fijos', {hideMonthNav:true, hideTitleHint:true});
 
-  const ciclicosPend = gastosCiclicos.filter(c=>!ciclicosHoy.includes(c) && !(c.contributions && c.contributions[mesActual]!==undefined));
+  const ciclicosPend = gastosCiclicos.filter(c=>c.status==='Pendiente' && !ciclicosHoy.includes(c));
   const imprevistosPend = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && !imprevistosHoy.includes(e));
   const esperaPend = gastosEspera.filter(e=>e.status==='Pendiente' && !esperaHoy.includes(e) && deudaSaldoActual('espera', e)>0);
 
@@ -2885,9 +2925,10 @@ function viewGastosEsteMes(){
     let totalOtros = 0;
     let filasOtros = '';
     ciclicosPend.forEach(c=>{
-      const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
-      totalOtros += provision;
-      filasOtros += renderGastosPendingRow('🐷 '+c.name+(c.nextDueDate?` (próx. ${c.nextDueDate})`:''), provision, null);
+      const abonadoEsteMes = (c.abonos||[]).filter(a=>a.date && a.date.slice(0,7)===mesActual).reduce((s,a)=>s+Number(a.amount||0),0);
+      const falta = Math.max(0, Number(c.cuotaPactada||0) - abonadoEsteMes);
+      totalOtros += falta;
+      filasOtros += renderGastosPendingRow('🐷 '+c.name+(c.diaPago?` (día ${c.diaPago})`:''), falta, null);
     });
     imprevistosPend.forEach(e=>{
       totalOtros += Number(e.amount||0);
@@ -2930,97 +2971,35 @@ function viewGastosEsteMes(){
 function viewGastosCiclicos(){
   let html = `<div class="panel">
     <h2>Ahorros y Provisiones</h2>
-    <div class="status-msg">Cada uno arma una "alcancía": aporta la provisión mensual hasta completar el monto total, y luego lo marcas como pagado.</div>
-    <div class="row">
+    <div class="status-msg">Registra el monto total y ve aportando — el saldo baja hasta llegar a $0, donde se marca completo automáticamente.</div>
+    <button type="button" class="secondary" data-gastos-toggle-form="ciclicos" style="width:100%;">${gastosFormAbierto.ciclicos?'✕ Cerrar':'➕ Agregar ahorro o provisión'}</button>
+    ${gastosFormAbierto.ciclicos ? `
+    <div class="row" style="margin-top:8px;">
       <div><input type="text" id="gs_new_name_ciclicos" placeholder="Nombre"></div>
       <div><input type="text" id="gs_new_amount_ciclicos" placeholder="Monto total" inputmode="numeric"></div>
     </div>
-    <div class="row" style="margin-top:6px;">
-      <div><input type="text" id="gs_new_period_ciclicos" placeholder="Cada cuántos meses (ej. 6)" inputmode="numeric"></div>
-      <div>
-        <label style="margin-top:0;">Fecha en que necesitas la plata completa</label>
-        <input type="date" id="gs_new_date_ciclicos">
-      </div>
-    </div>
-    <button type="button" class="primary" data-gastos-add="ciclicos" style="width:100%;margin-top:8px;">➤ Agregar</button>
+    <label>Cuota mensual (cuánto vas a aportar cada mes)</label>
+    <input type="text" id="gs_new_cuota_ciclicos" placeholder="Ej. 200000" inputmode="numeric">
+    <label>Día del mes para aportar</label>
+    <input type="text" id="gs_new_diapago_ciclicos" inputmode="numeric" placeholder="1-31" maxlength="2" style="max-width:100px;">
+    <label>Fecha en que necesitas la plata (opcional, solo de referencia)</label>
+    <input type="date" id="gs_new_fecha_ciclicos">
+    <button type="button" class="primary" data-gastos-add="ciclicos" style="width:100%;margin-top:8px;">➤ Agregar</button>` : ''}
   </div>`;
   html += `<div class="panel">`;
-  if(gastosCiclicos.length===0){
+  const sorted = gastosCiclicos.slice().sort((a,b)=>{
+    const pa = deudaSaldoActual('ciclicos',a)<=0 ? 1 : 0;
+    const pb = deudaSaldoActual('ciclicos',b)<=0 ? 1 : 0;
+    if(pa!==pb) return pa-pb;
+    return (a.diaPago||99)-(b.diaPago||99);
+  });
+  if(sorted.length===0){
     html += `<div class="empty">Sin registros.</div>`;
   } else {
-    html += renderGastosCiclicosTabla();
+    html += renderGastosDeudaTabla('ciclicos', sorted, LABELS_CICLICOS);
   }
   html += `</div>`;
   return html;
-}
-function renderGastosCiclicosTabla(){
-  const rows = gastosCiclicos.map(c=>{
-    const key = 'ciclicos:'+c.id;
-    const isEditing = gastosEditingId===key;
-    if(isEditing){
-      const isConfirmingDelete = gastosPendingDeleteId === key;
-      if(isConfirmingDelete){
-        return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
-          <div class="task-card" style="margin:0;">
-            <div class="task-meta" style="margin-bottom:8px;">⚠️ ¿Eliminar "${escapeHtml(c.name)}"? Esta acción no se puede deshacer.</div>
-            <div class="icon-actions">
-              ${iconAction('complete','check','Sí, eliminar', `data-gastos-confirm-delete="${key}"`)}
-              ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-delete="1"`)}
-            </div>
-          </div>
-        </td></tr>`;
-      }
-      return `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
-        <div class="task-card" style="margin:0;">
-          <label>Nombre</label>
-          <input type="text" id="gs_edit_name_${c.id}" value="${escapeAttr(c.name)}">
-          <label>Monto total</label>
-          <input type="text" id="gs_edit_amount_${c.id}" value="${c.totalAmount}" inputmode="numeric">
-          <label>Cada cuántos meses (para dividir el aporte mensual)</label>
-          <input type="text" id="gs_edit_period_${c.id}" value="${c.periodMonths}" inputmode="numeric">
-          <label>Fecha en que necesitas la plata completa</label>
-          <input type="date" id="gs_edit_date_${c.id}" value="${c.nextDueDate||''}">
-          <div class="icon-actions" style="margin-top:8px;">
-            ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
-            ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
-            ${iconAction('delete','trash','Eliminar', `data-gastos-delete="${key}"`)}
-          </div>
-        </div>
-      </td></tr>`;
-    }
-    const total = Number(c.totalAmount||0);
-    const acumulado = ciclicoAccumulated(c);
-    const provision = total/Math.max(1,Number(c.periodMonths||1));
-    const pct = total>0 ? Math.min(100, Math.round((acumulado/total)*100)) : 0;
-    const yaAporto = !!(c.contributions && c.contributions[gastosViewMonth]!==undefined);
-    const completo = acumulado >= total && total>0;
-
-    let accionBtn;
-    if(completo){
-      accionBtn = `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-mark-paid="${c.id}" title="Marcar pagado">✅</button>`;
-    } else if(yaAporto){
-      accionBtn = `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-undo-contribute="${c.id}" title="Deshacer aporte">↩️</button>`;
-    } else {
-      accionBtn = `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-contribute="${c.id}" title="Aportar este mes">🐷</button>`;
-    }
-
-    return `<tr>
-      <td style="text-align:left;">${escapeHtml(c.name)}</td>
-      <td>${formatCOP(total)}<div style="font-size:9.5px;color:var(--muted);font-weight:400;">acum: ${formatCOP(acumulado)}</div></td>
-      <td>${pct}%${completo?' 🎉':(yaAporto?' ✅':'')}</td>
-      <td>
-        ${accionBtn}
-        <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-edit="${key}" title="Editar">✏️</button>
-      </td>
-    </tr>`;
-  }).join('');
-  return `<div class="task-meta" style="text-align:center;margin-bottom:4px;">💡 Si no ves todo, gira el celular</div>
-  <div style="overflow-x:auto;">
-    <table class="amort-table compact-table">
-      <thead><tr><th>Nombre</th><th>Total / Acum</th><th>%</th><th></th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  </div>`;
 }
 
 // ---------- Interfaz Datos (exportar / importar) ----------
@@ -3111,10 +3090,17 @@ function procesarImportacionGastos(sheets){
     return item;
   }).filter(i=>i.name);
 
-  const nuevosCiclicos = (sheets['Ahorros']||[]).map(r=>({
-    id:uid(), name:String(r['Nombre']||'').trim(), totalAmount:Number(r['Monto total'])||0,
-    periodMonths: Number(r['Cada cuántos meses'])||1, nextDueDate: r['Próxima fecha']||null, contributions:{}
-  })).filter(c=>c.name);
+  const nuevosCiclicos = (sheets['Ahorros']||[]).map(r=>{
+    const c = {
+      id:uid(), name:String(r['Nombre']||'').trim(), amount:Number(r['Monto total'])||0,
+      diaPago: parseInt(r['Día del mes'],10)||null,
+      cuotaPactada: Number(r['Cuota mensual'])||null,
+      fechaObjetivo: r['Fecha objetivo']||null,
+      date: null, status:'Pendiente', abonos:[]
+    };
+    c.status = deudaSaldoActual('ciclicos', c) <= 0 ? 'Pagado' : 'Pendiente';
+    return c;
+  }).filter(c=>c.name);
 
   const nuevosImprevistos = (sheets['Imprevistos']||[]).map(r=>({
     id:uid(), name:String(r['Nombre']||'').trim(), amount:Number(r['Monto'])||0, date:r['Fecha']||null,
@@ -3271,8 +3257,8 @@ function exportGastosExcel(){
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(fijosRows), 'Pagos Fijos');
 
   const ciclicosRows = gastosCiclicos.map(c=>({
-    'Nombre':c.name||'', 'Monto total':c.totalAmount||0,
-    'Cada cuántos meses':c.periodMonths||'', 'Próxima fecha':c.nextDueDate||'',
+    'Nombre':c.name||'', 'Monto total':c.amount||0,
+    'Día del mes':c.diaPago||'', 'Cuota mensual':c.cuotaPactada||'', 'Fecha objetivo':c.fechaObjetivo||'',
   }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ciclicosRows), 'Ahorros');
 
@@ -3635,15 +3621,6 @@ function bindEvents(){
   document.querySelectorAll('[data-gastos-deshacer-abono-imprevisto]').forEach(b=>{
     b.onclick = ()=>onGastosDeshacerAbonoImprevisto(b.getAttribute('data-gastos-deshacer-abono-imprevisto'));
   });
-  document.querySelectorAll('[data-gastos-contribute]').forEach(b=>{
-    b.onclick = ()=>onGastosContribute(b.getAttribute('data-gastos-contribute'));
-  });
-  document.querySelectorAll('[data-gastos-undo-contribute]').forEach(b=>{
-    b.onclick = ()=>onGastosUndoContribute(b.getAttribute('data-gastos-undo-contribute'));
-  });
-  document.querySelectorAll('[data-gastos-mark-paid]').forEach(b=>{
-    b.onclick = ()=>onGastosMarkPaid(b.getAttribute('data-gastos-mark-paid'));
-  });
   document.querySelectorAll('[data-gastos-reconcile-edit]').forEach(b=>{
     b.onclick = ()=>{ gastosEditingId = 'reconcile:'+b.getAttribute('data-gastos-reconcile-edit'); render(); };
   });
@@ -3968,29 +3945,29 @@ async function onGastosAdd(cat){
   const amount = parseMoney(document.getElementById('gs_new_amount_'+cat).value);
   if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
 
-  if(cat==='ciclicos'){
-    const period = parseInt(document.getElementById('gs_new_period_ciclicos').value, 10);
-    const date = document.getElementById('gs_new_date_ciclicos').value || null;
-    if(!period || period<1){ alert('Indica cada cuántos meses se repite (ej. 6).'); return; }
-    gastosCiclicos.push({ id:uid(), name, totalAmount:amount, periodMonths:period, nextDueDate:date, contributions:{} });
-    await saveGastos('ciclicos');
-  } else if(cat==='extraordinarios' || cat==='espera' || cat==='prestamos'){
-    const date = document.getElementById('gs_new_date_'+cat).value || null;
+  if(cat==='extraordinarios' || cat==='espera' || cat==='prestamos' || cat==='ciclicos'){
+    const dateEl = document.getElementById('gs_new_date_'+cat) || (cat==='ciclicos' ? document.getElementById('gs_new_fecha_ciclicos') : null);
+    const date = dateEl ? dateEl.value || null : null;
     if((cat==='extraordinarios' || cat==='prestamos') && !date){ alert('Indica la fecha.'); return; }
-    const newDeuda = { id:uid(), name, amount, date, status:'Pendiente', abonos:[] };
+    const newDeuda = { id:uid(), name, amount, date: (cat==='ciclicos'?null:date), status:'Pendiente', abonos:[] };
     if(cat==='espera' || cat==='prestamos'){
       const tasaEl = document.getElementById('gs_new_tasa_'+cat);
       const tasa = tasaEl ? parseFloat(tasaEl.value) : 0;
       newDeuda.tasaMensual = isNaN(tasa) ? 0 : tasa;
+    }
+    if(cat==='espera' || cat==='prestamos' || cat==='ciclicos'){
       const diaPagoEl = document.getElementById('gs_new_diapago_'+cat);
       const diaPago = diaPagoEl ? parseInt(diaPagoEl.value,10) : NaN;
+      if(cat==='ciclicos' && !(diaPago>=1 && diaPago<=31)){ alert('Indica el día del mes para aportar.'); return; }
       if(diaPago>=1 && diaPago<=31) newDeuda.diaPago = diaPago;
     }
-    if(cat==='espera'){
-      const cuotaEl = document.getElementById('gs_new_cuota_espera');
+    if(cat==='espera' || cat==='ciclicos'){
+      const cuotaEl = document.getElementById('gs_new_cuota_'+cat);
       const cuota = cuotaEl ? parseMoney(cuotaEl.value) : 0;
+      if(cat==='ciclicos' && cuota<=0){ alert('Indica la cuota mensual.'); return; }
       if(cuota>0) newDeuda.cuotaPactada = cuota;
     }
+    if(cat==='ciclicos') newDeuda.fechaObjetivo = date;
     gastosListFor(cat).push(newDeuda);
     await saveGastos(cat);
   } else {
@@ -4038,11 +4015,18 @@ async function onGastosSaveEdit(key){
 
   if(cat==='ciclicos'){
     const amount = parseMoney(document.getElementById('gs_edit_amount_'+id).value);
-    const period = parseInt(document.getElementById('gs_edit_period_'+id).value, 10);
-    if(amount<=0 || !period || period<1){ alert('Revisa el monto total y la periodicidad.'); return; }
-    item.totalAmount = amount;
-    item.periodMonths = period;
-    item.nextDueDate = document.getElementById('gs_edit_date_'+id).value || null;
+    const diaPagoEl = document.getElementById('gs_edit_diapago_'+id);
+    const diaPago = diaPagoEl ? parseInt(diaPagoEl.value,10) : NaN;
+    const cuotaEl = document.getElementById('gs_edit_cuota_'+id);
+    const cuota = cuotaEl ? parseMoney(cuotaEl.value) : 0;
+    if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
+    if(!(diaPago>=1 && diaPago<=31)){ alert('Indica el día del mes para aportar.'); return; }
+    if(cuota<=0){ alert('Indica la cuota mensual.'); return; }
+    item.amount = amount;
+    item.diaPago = diaPago;
+    item.cuotaPactada = cuota;
+    const fechaEl = document.getElementById('gs_edit_fecha_'+id);
+    item.fechaObjetivo = fechaEl ? (fechaEl.value || null) : null;
   } else {
     const amount = parseMoney(document.getElementById('gs_edit_amount_'+id).value);
     if(amount<=0){ alert('El monto debe ser mayor a cero.'); return; }
@@ -4075,6 +4059,7 @@ async function onGastosSaveEdit(key){
   }
 
   gastosEditingId = null;
+  item.status = deudaSaldoActual(cat, item) <= 0 ? 'Pagado' : (cat==='ciclicos'||cat==='espera'||cat==='prestamos' ? 'Pendiente' : item.status);
   await saveGastos(cat);
   render();
 }
@@ -4182,24 +4167,26 @@ async function onGastosConvertirDeuda(id){
 async function onGastosConvertirAhorro(id){
   const item = gastosExtraordinarios.find(x=>x.id===id);
   if(!item) return;
-  const periodoEl = document.getElementById('gs_convertir_periodo_'+id);
+  const cuotaEl = document.getElementById('gs_convertir_cuota_ahorro_'+id);
+  const diaPagoEl = document.getElementById('gs_convertir_diapago_ahorro_'+id);
   const fechaEl = document.getElementById('gs_convertir_fecha_'+id);
-  const periodo = periodoEl ? parseInt(periodoEl.value,10) : NaN;
+  const cuota = cuotaEl ? parseMoney(cuotaEl.value) : 0;
+  const diaPago = diaPagoEl ? parseInt(diaPagoEl.value,10) : NaN;
   const fecha = fechaEl ? fechaEl.value : '';
-  const contributions = {};
-  (item.abonos||[]).forEach(a=>{
-    if(!a.fecha) return;
-    const mes = a.fecha.slice(0,7);
-    contributions[mes] = (contributions[mes]||0) + Number(a.monto||0);
-  });
+  if(cuota<=0){ alert('Indica la cuota mensual.'); return; }
+  if(!(diaPago>=1 && diaPago<=31)){ alert('Indica el día del mes para aportar.'); return; }
   const nuevoAhorro = {
     id: uid(),
     name: item.name,
-    totalAmount: Number(item.amount||0),
-    periodMonths: (periodo>=1) ? periodo : 12,
-    nextDueDate: fecha || null,
-    contributions,
+    amount: Number(item.amount||0),
+    diaPago,
+    cuotaPactada: cuota,
+    fechaObjetivo: fecha || null,
+    date: null,
+    status: 'Pendiente',
+    abonos: (item.abonos||[]).map(a=>({ id:a.id||uid(), amount:Number(a.monto||0), date:a.fecha||todayStr() })),
   };
+  nuevoAhorro.status = deudaSaldoActual('ciclicos', nuevoAhorro) <= 0 ? 'Pagado' : 'Pendiente';
   gastosCiclicos.push(nuevoAhorro);
   gastosExtraordinarios = gastosExtraordinarios.filter(x=>x.id!==id);
   gastosEditingId = null;
@@ -4207,36 +4194,6 @@ async function onGastosConvertirAhorro(id){
   await saveGastos('extraordinarios');
   render();
   alert('Convertido a "Ahorros y Provisiones", con lo que ya habías aportado.');
-}
-
-async function onGastosContribute(id){
-  const c = gastosCiclicos.find(x=>x.id===id);
-  if(!c) return;
-  if(!c.contributions) c.contributions = {};
-  if(c.contributions[gastosViewMonth] !== undefined) return;
-  const provision = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
-  c.contributions[gastosViewMonth] = provision;
-  await saveGastos('ciclicos');
-  render();
-}
-async function onGastosUndoContribute(id){
-  const c = gastosCiclicos.find(x=>x.id===id);
-  if(!c || !c.contributions) return;
-  delete c.contributions[gastosViewMonth];
-  await saveGastos('ciclicos');
-  render();
-}
-
-async function onGastosMarkPaid(id){
-  const c = gastosCiclicos.find(x=>x.id===id);
-  if(!c) return;
-  c.contributions = {};
-  c.accumulated = 0;
-  if(c.nextDueDate){
-    c.nextDueDate = addMonthsToDate(c.nextDueDate, c.periodMonths);
-  }
-  await saveGastos('ciclicos');
-  render();
 }
 
 function escapeHtml(s){
