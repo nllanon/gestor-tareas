@@ -2431,7 +2431,8 @@ function renderGastosDatedTabla(cat, sorted){
     } else {
       accionBtn = `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-registrar-imprevisto-open="${item.id}" title="Registrar pago">📝</button>
         <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-aplazar-imprevisto="${item.id}" title="Aplazar al mes siguiente">⏭️</button>
-        <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-convertir-deuda-open="${item.id}" title="Convertir a Lo que debo (varios meses)">🔄</button>`;
+        <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-convertir-deuda-open="${item.id}" title="Convertir a Lo que debo (varios meses)">🔄⏳</button>
+        <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-convertir-ahorro-open="${item.id}" title="Convertir a Ahorros y Provisiones (ir apartando)">🔄🐷</button>`;
       if(item.abonos && item.abonos.length) accionBtn += `<button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-deshacer-abono-imprevisto="${item.id}" title="Deshacer último abono">↩️</button>`;
     }
 
@@ -2450,6 +2451,21 @@ function renderGastosDatedTabla(cat, sorted){
       </div>
     </td></tr>` : '';
 
+    const isConvirtiendoAhorro = gastosEditingId === ('convertirahorro:'+item.id);
+    const formConvertirAhorroHtml = isConvirtiendoAhorro ? `<tr><td colspan="4" style="padding:8px;background:var(--panel);">
+      <div class="task-card" style="margin:0;">
+        <div class="status-msg">Esto mueve "${escapeHtml(item.name)}" (y sus aportes ya registrados) a "Ahorros y Provisiones", para ir apartando plata hasta reunir el total.</div>
+        <label>Cada cuántos meses (ej. 6, 12)</label>
+        <input type="text" id="gs_convertir_periodo_${item.id}" inputmode="numeric" placeholder="Ej. 12">
+        <label>Fecha en que necesitas la plata</label>
+        <input type="date" id="gs_convertir_fecha_${item.id}" value="${item.date||''}">
+        <div class="icon-actions" style="margin-top:8px;">
+          ${iconAction('save','save','Convertir', `data-gastos-convertir-ahorro-save="${item.id}"`)}
+          ${iconAction('cancel','x','Cancelar', `data-gastos-cancel-edit="1"`)}
+        </div>
+      </div>
+    </td></tr>` : '';
+
     return `<tr>
       <td style="text-align:left;">${escapeHtml(item.name)}${item.date?`<div style="font-size:10.5px;color:var(--muted);margin-top:2px;">Planeado: ${item.date}</div>`:''}</td>
       <td>${formatCOP(item.amount)}</td>
@@ -2458,7 +2474,7 @@ function renderGastosDatedTabla(cat, sorted){
         ${accionBtn}
         <button type="button" class="icon-btn" style="width:28px;height:28px;font-size:11px;" data-gastos-edit="${key}" title="Editar">✏️</button>
       </td>
-    </tr>${formConvertirHtml}`;
+    </tr>${formConvertirHtml}${formConvertirAhorroHtml}`;
   }).join('');
   return `<div class="task-meta" style="text-align:center;margin-bottom:4px;">💡 Si no ves todo, gira el celular</div>
   <div style="overflow-x:auto;">
@@ -3612,6 +3628,12 @@ function bindEvents(){
   document.querySelectorAll('[data-gastos-convertir-deuda-save]').forEach(b=>{
     b.onclick = ()=>onGastosConvertirDeuda(b.getAttribute('data-gastos-convertir-deuda-save'));
   });
+  document.querySelectorAll('[data-gastos-convertir-ahorro-open]').forEach(b=>{
+    b.onclick = ()=>{ gastosEditingId = 'convertirahorro:'+b.getAttribute('data-gastos-convertir-ahorro-open'); render(); };
+  });
+  document.querySelectorAll('[data-gastos-convertir-ahorro-save]').forEach(b=>{
+    b.onclick = ()=>onGastosConvertirAhorro(b.getAttribute('data-gastos-convertir-ahorro-save'));
+  });
   document.querySelectorAll('[data-gastos-deshacer-abono-imprevisto]').forEach(b=>{
     b.onclick = ()=>onGastosDeshacerAbonoImprevisto(b.getAttribute('data-gastos-deshacer-abono-imprevisto'));
   });
@@ -4157,6 +4179,36 @@ async function onGastosConvertirDeuda(id){
   await saveGastos('extraordinarios');
   render();
   alert('Convertido a "Lo que debo", con todo su historial de abonos.');
+}
+
+async function onGastosConvertirAhorro(id){
+  const item = gastosExtraordinarios.find(x=>x.id===id);
+  if(!item) return;
+  const periodoEl = document.getElementById('gs_convertir_periodo_'+id);
+  const fechaEl = document.getElementById('gs_convertir_fecha_'+id);
+  const periodo = periodoEl ? parseInt(periodoEl.value,10) : NaN;
+  const fecha = fechaEl ? fechaEl.value : '';
+  const contributions = {};
+  (item.abonos||[]).forEach(a=>{
+    if(!a.fecha) return;
+    const mes = a.fecha.slice(0,7);
+    contributions[mes] = (contributions[mes]||0) + Number(a.monto||0);
+  });
+  const nuevoAhorro = {
+    id: uid(),
+    name: item.name,
+    totalAmount: Number(item.amount||0),
+    periodMonths: (periodo>=1) ? periodo : 12,
+    nextDueDate: fecha || null,
+    contributions,
+  };
+  gastosCiclicos.push(nuevoAhorro);
+  gastosExtraordinarios = gastosExtraordinarios.filter(x=>x.id!==id);
+  gastosEditingId = null;
+  await saveGastos('ciclicos');
+  await saveGastos('extraordinarios');
+  render();
+  alert('Convertido a "Ahorros y Provisiones", con lo que ya habías aportado.');
 }
 
 async function onGastosContribute(id){
