@@ -480,12 +480,18 @@ function renderTabs(){
   });
 }
 
+function ciclicoTocaHoy(c, mesActual, todayDay){
+  if(!c.nextDueDate) return false;
+  const dia = Number(c.nextDueDate.slice(8,10));
+  const contribDone = c.contributions && c.contributions[mesActual]!==undefined;
+  return dia===todayDay && !contribDone;
+}
 function resumenHoyGastos(){
   const today = todayStr();
   const todayDay = new Date().getDate();
   const mesActual = currentMonthStr();
   const fijosHoy = gastosFijos.filter(i=>!i.isProvision && i.dueDay===todayDay && fijoEstadoMes(i, mesActual).estado!=='pagado');
-  const ciclicosHoy = gastosCiclicos.filter(c=>c.nextDueDate===today);
+  const ciclicosHoy = gastosCiclicos.filter(c=>ciclicoTocaHoy(c, mesActual, todayDay));
   const imprevistosHoy = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date===today);
   const esperaHoy = gastosEspera.filter(e=>e.status==='Pendiente' && e.diaPago===todayDay);
   const ingresosHoy = gastosIngresos.filter(i=>i.dueDay===todayDay && !estaRegistrado(i, mesActual));
@@ -2781,7 +2787,7 @@ function calcularCalendarioMes(){
   gastosEspera.filter(e=>e.status==='Pendiente' && e.diaPago).forEach(e=>{
     addPago(e.diaPago, montoPendienteMesEspera(e), '⏳ '+e.name);
   });
-  gastosCiclicos.filter(c=>c.nextDueDate && c.nextDueDate.slice(0,7)===gastosViewMonth && !(c.contributions && c.contributions[gastosViewMonth]!==undefined)).forEach(c=>{
+  gastosCiclicos.filter(c=>c.nextDueDate && !(c.contributions && c.contributions[gastosViewMonth]!==undefined)).forEach(c=>{
     const prov = Number(c.totalAmount||0)/Math.max(1,Number(c.periodMonths||1));
     addPago(Number(c.nextDueDate.slice(8,10)), prov, '🐷 '+c.name);
   });
@@ -2811,7 +2817,7 @@ function viewGastosEsteMes(){
 
   const fijosHoy = gastosFijos.filter(i=>!i.isProvision && i.dueDay===todayDay && fijoEstadoMes(i, mesActual).estado!=='pagado');
   const provisionesHoy = gastosFijos.filter(i=>i.isProvision && i.dueDay===todayDay);
-  const ciclicosHoy = gastosCiclicos.filter(c=>c.nextDueDate===today);
+  const ciclicosHoy = gastosCiclicos.filter(c=>ciclicoTocaHoy(c, mesActual, todayDay));
   const imprevistosHoy = gastosExtraordinarios.filter(e=>e.status==='Pendiente' && e.date===today);
   const esperaHoy = gastosEspera.filter(e=>e.status==='Pendiente' && e.diaPago===todayDay);
   const ingresosHoy = gastosIngresos.filter(i=>i.dueDay===todayDay && !estaRegistrado(i, mesActual));
@@ -2991,9 +2997,9 @@ function renderGastosCiclicosTabla(){
           <input type="text" id="gs_edit_name_${c.id}" value="${escapeAttr(c.name)}">
           <label>Monto total</label>
           <input type="text" id="gs_edit_amount_${c.id}" value="${c.totalAmount}" inputmode="numeric">
-          <label>Cada cuántos meses</label>
+          <label>Cada cuántos meses (para dividir el aporte mensual)</label>
           <input type="text" id="gs_edit_period_${c.id}" value="${c.periodMonths}" inputmode="numeric">
-          <label>Próxima fecha</label>
+          <label>Fecha en que necesitas la plata completa</label>
           <input type="date" id="gs_edit_date_${c.id}" value="${c.nextDueDate||''}">
           <div class="icon-actions" style="margin-top:8px;">
             ${iconAction('save','save','Guardar', `data-gastos-save="${key}"`)}
