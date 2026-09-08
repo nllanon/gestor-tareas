@@ -1216,12 +1216,7 @@ function viewGastosResumen(){
     imprevistosPagadosDelMes, abonosDeudaDelMes,
     totalPrestamosSalida, cobrosDelMes, totalAportesMetas, disponible, extraordinariosMes,
     esperaVencidos, prestamosDelMes, saldoInicial } = s;
-  const prestamosPendientes = gastosPrestamos.filter(p=>deudaSaldoActual('prestamos', p) > 0);
   const mesCerrado = !!gastosMesesCerrados[gastosViewMonth];
-
-  const ingresosPendientes = gastosIngresos.filter(i=>!estaRegistrado(i, gastosViewMonth));
-  const fijosPendientes = gastosFijos.filter(i=>!i.isProvision && fijoEstadoMes(i, gastosViewMonth).estado!=='pagado');
-  const ciclicosPendientes = gastosCiclicos.filter(c=>!gastosMonthlyInfo('ciclicos',c,gastosViewMonth).confirmed);
 
   let html = renderMonthNav();
 
@@ -1292,50 +1287,10 @@ function viewGastosResumen(){
     html += `<div class="panel">
       <h2>📈 Tendencias (últimos ${historico.length} meses)</h2>
       <div class="status-msg">Disponible mes a mes</div>
-      <canvas id="chart-disponible" height="160"></canvas>
+      <canvas id="chart-disponible" height="100"></canvas>
       <div class="status-msg" style="margin-top:16px;">Ingresos vs. gastos por mes</div>
-      <canvas id="chart-ingresos-gastos" height="160"></canvas>
+      <canvas id="chart-ingresos-gastos" height="100"></canvas>
     </div>`;
-
-    if(fijosPendientes.length || ciclicosPendientes.length || extraordinariosMes.length){
-      let totalPendientePagar = 0;
-      let filasPagar = '';
-      fijosPendientes.forEach(i=>{
-        const info = gastosMonthlyInfo('fijos', i, gastosViewMonth);
-        totalPendientePagar += info.plan;
-        filasPagar += renderGastosPendingRow(i.name, info.plan, null);
-      });
-      ciclicosPendientes.forEach(c=>{
-        const info = gastosMonthlyInfo('ciclicos', c, gastosViewMonth);
-        totalPendientePagar += info.plan;
-        filasPagar += renderGastosPendingRow(c.name+' (provisión)', info.plan, null);
-      });
-      extraordinariosMes.forEach(e=>{
-        totalPendientePagar += Number(e.amount||0);
-        filasPagar += renderGastosPendingRow(e.name, e.amount, null);
-      });
-      html += `<div class="panel"><h2>🔔 Pendiente por pagar este mes</h2>
-        <div class="status-msg">Solo lo que corresponde a ${monthLabel(gastosViewMonth)} — pagos fijos, provisiones e imprevistos. No incluye créditos, esos van aparte más abajo.</div>
-        <div class="money-row total"><span>Total pendiente del mes</span><span class="money-negative">${formatCOP(totalPendientePagar)}</span></div>
-        ${filasPagar}</div>`;
-    }
-    if(ingresosPendientes.length || prestamosPendientes.length){
-      let totalPendienteCobrar = 0;
-      let filasCobrar = '';
-      ingresosPendientes.forEach(i=>{
-        const info = gastosMonthlyInfo('ingresos', i, gastosViewMonth);
-        totalPendienteCobrar += info.plan;
-        filasCobrar += renderGastosPendingRow(i.name, info.plan, null);
-      });
-      prestamosPendientes.forEach(p=>{
-        const saldoP = deudaSaldoActual('prestamos', p);
-        totalPendienteCobrar += saldoP;
-        filasCobrar += renderGastosPendingRow(p.name+' (préstamo)', saldoP, null);
-      });
-      html += `<div class="panel"><h2>🔔 Pendiente por cobrar</h2>
-        <div class="money-row total"><span>Total pendiente</span><span class="money-positive">${formatCOP(totalPendienteCobrar)}</span></div>
-        ${filasCobrar}</div>`;
-    }
 
     // ---------- Lo que debo (creditos/prestamos): aparte, al final, con su historico ----------
     const esperaTodasPendientes = gastosEspera.filter(e=>e.status==='Pendiente');
@@ -1352,10 +1307,9 @@ function viewGastosResumen(){
         <div class="money-row total"><span>Total en créditos</span><span class="money-negative">${formatCOP(totalDeuda)}</span></div>
         ${filasDeuda}</div>`;
 
-      const historicoDeuda = ultimosMeses(6);
       html += `<div class="panel">
         <h2>📈 Cómo ha cambiado tu deuda total</h2>
-        <canvas id="chart-deuda" height="160"></canvas>
+        <canvas id="chart-deuda" height="100"></canvas>
       </div>`;
     }
   }
