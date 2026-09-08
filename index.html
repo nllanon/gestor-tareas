@@ -53,7 +53,7 @@
     line-height:1;box-shadow:0 0 0 2px var(--bg);
   }
 
-  .panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px;}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06);}
 
   label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px;margin-top:8px;}
   input[type=text],input[type=date],select,textarea{
@@ -93,6 +93,7 @@
 
   .task-card{
     border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px;background:#fdfdfc;
+    box-shadow:0 1px 3px rgba(0,0,0,0.06);
   }
   .task-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
   .task-name{font-weight:600;font-size:13.5px;}
@@ -265,6 +266,7 @@ let homeSection = null;
 let editingTaskId = null;
 let pendingDeleteId = null;
 let matrixAreaFilter = null;
+let tareasCompletadasAbierto = false;
 let expandedProjectId = null;
 let editingProjectId = null;
 let pendingProjectDeleteId = null;
@@ -432,14 +434,11 @@ function renderTabs(){
   if(homeSection==='tareas'){
     primary = [
       ['crear','➕ Crear tarea'],
-      ['organizar','📥 Organizar tareas'],
-      ['hoy','📅 HOY'],
-      ['proyectos','📁 Proyectos'],
+      ['hoy','📅 Hoy'],
+      ['todas','📋 Todas las tareas'],
     ];
     secondary = [
-      ['matriz-area','🗂️ Tareas por tema'],
-      ['matriz-general','📋 Todas las tareas'],
-      ['completadas','✅ ¡Lo hice!'],
+      ['proyectos','📁 Proyectos'],
       ['datos','📊 Datos'],
     ];
   } else {
@@ -471,7 +470,7 @@ function renderTabs(){
     b.textContent = label;
     if(key===currentTab) b.className='active';
     b.onclick = ()=>{ currentTab=key; editingTaskId=null; pendingDeleteId=null; gastosEditingId=null; gastosPendingDeleteId=null; render(); };
-    if(key==='organizar' && pendCount>0){
+    if(key==='hoy' && pendCount>0){
       const badge = document.createElement('span');
       badge.className = 'notif-badge';
       badge.textContent = pendCount>99 ? '99+' : String(pendCount);
@@ -496,11 +495,8 @@ function render(){
   if(homeSection===null){ c.innerHTML = viewHome(); bindEvents(); updateModal(); return; }
   if(homeSection==='tareas'){
     if(currentTab==='crear') c.innerHTML = viewCrear();
-    else if(currentTab==='organizar') c.innerHTML = viewOrganizar();
     else if(currentTab==='hoy') c.innerHTML = viewHoy();
-    else if(currentTab==='matriz-area') c.innerHTML = viewMatrizArea();
-    else if(currentTab==='matriz-general') c.innerHTML = viewMatrizGeneral();
-    else if(currentTab==='completadas') c.innerHTML = viewCompletadas();
+    else if(currentTab==='todas') c.innerHTML = viewTodas();
     else if(currentTab==='proyectos') c.innerHTML = viewProyectos();
     else if(currentTab==='datos') c.innerHTML = viewDatos();
   } else {
@@ -686,43 +682,151 @@ function viewCrear(){
   </div>`;
 }
 
-// ---------- Interfaz Organizar ----------
-function viewOrganizar(){
-  const pend = tasks.filter(t=>t.status==='Por organizar').sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
-
+// ---------- Interfaz HOY (incluye "Por organizar" arriba) ----------
+function viewHoy(){
   if(editingTaskId === '__new__'){
     return viewOrganizarDetalle(blankTask(), true);
   }
+  const pend = tasks.filter(t=>t.status==='Por organizar').sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
   if(editingTaskId){
     const t = tasks.find(x=>x.id===editingTaskId);
-    if(t) return viewOrganizarDetalle(t, false);
+    if(t && t.status==='Por organizar') return viewOrganizarDetalle(t, false);
   }
 
-  return `
-  <div class="panel">
-    <button class="primary" data-new-organize="1" style="width:100%;">+ Crear tarea completa</button>
-  </div>
-  <div class="panel">
-    <h2>Organizar tareas (${pend.length})</h2>
-    ${pend.length===0?'<div class="empty">No hay tareas pendientes de organizar.</div>':''}
-    ${pend.map(t=>{
-      const confirmingDelete = pendingDeleteId === t.id;
-      const actions = confirmingDelete
-        ? iconAction('complete','check','Confirmar', `data-confirm-delete="${t.id}"`) + iconAction('cancel','x','Cancelar', `data-cancel-delete="1"`)
-        : iconAction('edit','edit','Detalle', `data-organize="${t.id}"`) + iconAction('delete','trash','Eliminar', `data-delete-matrix="${t.id}"`);
-      return `
-      <div class="task-card status-organizar">
-        <div class="task-top">
-          <div>
-            <div class="task-name">${escapeHtml(t.name)}</div>
-            <div class="task-meta"><span class="badge status-organizar">Por organizar</span>${t.area?AREA_LABEL[t.area]:'sin área'}</div>
+  let html = '';
+  if(pend.length){
+    html += `<div class="panel">
+      <button class="primary" data-new-organize="1" style="width:100%;">+ Crear tarea completa</button>
+    </div>
+    <div class="panel">
+      <h2>📥 Por organizar (${pend.length})</h2>
+      ${pend.map(t=>{
+        const confirmingDelete = pendingDeleteId === t.id;
+        const actions = confirmingDelete
+          ? iconAction('complete','check','Confirmar', `data-confirm-delete="${t.id}"`) + iconAction('cancel','x','Cancelar', `data-cancel-delete="1"`)
+          : iconAction('edit','edit','Detalle', `data-organize="${t.id}"`) + iconAction('delete','trash','Eliminar', `data-delete-matrix="${t.id}"`);
+        return `
+        <div class="task-card status-organizar">
+          <div class="task-top">
+            <div>
+              <div class="task-name">${escapeHtml(t.name)}</div>
+              <div class="task-meta"><span class="badge status-organizar">Por organizar</span>${t.area?AREA_LABEL[t.area]:'sin área'}</div>
+            </div>
+            <div class="icon-actions">${actions}</div>
           </div>
-          <div class="icon-actions">${actions}</div>
-        </div>
-      </div>`;
-    }).join('')}
+        </div>`;
+      }).join('')}
+    </div>`;
+  }
+
+  const today = todayStr();
+  const todayCount = tasks.filter(t=>t.date===today && (t.status==='Sin iniciar'||t.status==='En ejecución'||t.status==='Pendiente')).length;
+  html += `<div class="panel" style="text-align:center;padding:18px 16px;">
+    <div class="task-meta" style="font-size:13px;">Tareas programadas para hoy</div>
+    <div style="font-size:34px;font-weight:800;margin-top:2px;color:var(--accent-dark);">${todayCount}</div>
+    <div class="task-meta" style="margin-top:4px;">${today} · Orden: 1) En ejecución, 2) Pendientes, 3) Sin iniciar.</div>
   </div>`;
+  let anyToday = false;
+  let grid = '';
+  AREAS.forEach(area=>{
+    const areaTasks = tasks.filter(t=>t.area===area && t.date===today && (t.status==='Sin iniciar'||t.status==='En ejecución'||t.status==='Pendiente'));
+    if(areaTasks.length===0) return;
+    anyToday = true;
+    grid += `<div class="area-block"><div class="area-title">${AREA_LABEL[area]}</div>`;
+
+    const uncategorized = areaTasks.filter(t=>!getCategory(t.priority,t.effort,t.energy));
+    if(uncategorized.length){
+      grid += `<div class="cat-title">Sin categorizar (falta prioridad, esfuerzo o energía)</div>`;
+      grid += renderTaskList(sortTasks(uncategorized), false, true, false, true);
+    }
+
+    SECTION_ORDER.forEach(section=>{
+      const catsInSection = Object.entries(CATEGORY_MAP).filter(([k,v])=>v.section===section).sort((a,b)=>a[1].order-b[1].order);
+      let sectionTasksTotal = [];
+      catsInSection.forEach(([key])=>{
+        const [p,e,en] = key.split('|');
+        sectionTasksTotal = sectionTasksTotal.concat(areaTasks.filter(t=>t.priority===p&&t.effort===e&&t.energy===en));
+      });
+      if(sectionTasksTotal.length===0) return;
+      grid += `<div class="section-title">${section}</div>`;
+      catsInSection.forEach(([key])=>{
+        const [p,e,en] = key.split('|');
+        const catTasks = sortTasks(areaTasks.filter(t=>t.priority===p&&t.effort===e&&t.energy===en));
+        if(catTasks.length===0) return;
+        grid += `<div class="cat-title">${p} prioridad · ${e} esfuerzo · ${en} energía</div>`;
+        grid += renderTaskList(catTasks, false, true, false, true);
+      });
+    });
+    grid += `</div>`;
+  });
+  if(!anyToday) html += `<div class="panel"><div class="empty">No tienes tareas programadas para hoy.</div></div>`;
+  else html += `<div class="hoy-grid">${grid}</div>`;
+  return html;
 }
+
+// ---------- Interfaz Todas las tareas (fusiona Tareas por tema + Todas las tareas) ----------
+let tareasAgruparPorArea = true;
+let tareasBusqueda = '';
+function renderTaskSections(list, sortFn, showArea){
+  let html = '';
+  const uncategorized = list.filter(t=>!getCategory(t.priority,t.effort,t.energy));
+  if(uncategorized.length){
+    html += `<div class="cat-title">Sin categorizar (falta prioridad, esfuerzo o energía)</div>`;
+    html += renderTaskList(sortFn(uncategorized), showArea);
+  }
+  SECTION_ORDER.forEach(section=>{
+    const catsInSection = Object.entries(CATEGORY_MAP).filter(([k,v])=>v.section===section).sort((a,b)=>a[1].order-b[1].order);
+    let sectionTasksTotal = [];
+    catsInSection.forEach(([key])=>{
+      const [p,e,en] = key.split('|');
+      sectionTasksTotal = sectionTasksTotal.concat(list.filter(t=>t.priority===p&&t.effort===e&&t.energy===en));
+    });
+    if(sectionTasksTotal.length===0 && section!=='EN CAMINO') return;
+    html += `<div class="section-title">${section}</div>`;
+    if(sectionTasksTotal.length===0){
+      html += `<div class="empty">Sin tareas en esta sección.</div>`;
+    } else {
+      catsInSection.forEach(([key])=>{
+        const [p,e,en] = key.split('|');
+        const catTasks = sortFn(list.filter(t=>t.priority===p&&t.effort===e&&t.energy===en));
+        if(catTasks.length===0) return;
+        html += `<div class="cat-title">${p} prioridad · ${e} esfuerzo · ${en} energía</div>`;
+        html += renderTaskList(catTasks, showArea);
+      });
+    }
+  });
+  return html;
+}
+function viewTodas(){
+  let html = `<div class="panel"><h2>Todas las tareas</h2>
+    <div class="status-msg">${tareasAgruparPorArea ? 'Por área: primero "En ejecución", luego "Sin iniciar" — ordenadas por fecha más próxima.' : 'Todas juntas, ordenadas solo por fecha (más próxima primero).'}</div>
+    <input type="text" id="tareas_buscador" placeholder="🔍 Buscar por nombre, proyecto o nota..." value="${escapeAttr(tareasBusqueda)}">
+    <button type="button" class="secondary" data-toggle-agrupar-tareas="1" style="width:100%;margin-top:8px;">${tareasAgruparPorArea?'Ver sin agrupar por área':'Agrupar por área'}</button>
+  </div>`;
+
+  let allTasks = tasks.filter(t=>t.status==='Sin iniciar'||t.status==='En ejecución'||t.status==='Pendiente');
+  const busq = tareasBusqueda.trim().toLowerCase();
+  if(busq){
+    allTasks = allTasks.filter(t=>
+      (t.name||'').toLowerCase().includes(busq) ||
+      (t.project||'').toLowerCase().includes(busq) ||
+      (t.notes||'').toLowerCase().includes(busq)
+    );
+  }
+
+  if(tareasAgruparPorArea){
+    AREAS.forEach(area=>{
+      const areaTasks = allTasks.filter(t=>t.area===area);
+      html += `<div class="area-block"><div class="area-title">${AREA_LABEL[area]}</div>`;
+      html += renderTaskSections(areaTasks, sortTasks, false);
+      html += `</div>`;
+    });
+  } else {
+    html += renderTaskSections(allTasks, sortByDateOnly, true);
+  }
+  return html;
+}
+
 function viewOrganizarDetalle(t, isNew){
   const idAttr = t.id || '__new__';
   return `
@@ -784,122 +888,6 @@ function viewOrganizarDetalle(t, isNew){
   </div>`;
 }
 
-// ---------- Interfaz HOY ----------
-function viewHoy(){
-  const today = todayStr();
-  let html = `<div class="panel"><h2>HOY (${today})</h2><div class="status-msg">Solo tareas programadas para hoy. Orden: 1) En ejecución, 2) Pendientes, 3) Sin iniciar.</div></div>`;
-  let anyToday = false;
-  let grid = '';
-  AREAS.forEach(area=>{
-    const areaTasks = tasks.filter(t=>t.area===area && t.date===today && (t.status==='Sin iniciar'||t.status==='En ejecución'||t.status==='Pendiente'));
-    if(areaTasks.length===0) return;
-    anyToday = true;
-    grid += `<div class="area-block"><div class="area-title">${AREA_LABEL[area]}</div>`;
-
-    const uncategorized = areaTasks.filter(t=>!getCategory(t.priority,t.effort,t.energy));
-    if(uncategorized.length){
-      grid += `<div class="cat-title">Sin categorizar (falta prioridad, esfuerzo o energía)</div>`;
-      grid += renderTaskList(sortTasks(uncategorized), false, true, false, true);
-    }
-
-    SECTION_ORDER.forEach(section=>{
-      const catsInSection = Object.entries(CATEGORY_MAP).filter(([k,v])=>v.section===section).sort((a,b)=>a[1].order-b[1].order);
-      let sectionTasksTotal = [];
-      catsInSection.forEach(([key])=>{
-        const [p,e,en] = key.split('|');
-        sectionTasksTotal = sectionTasksTotal.concat(areaTasks.filter(t=>t.priority===p&&t.effort===e&&t.energy===en));
-      });
-      if(sectionTasksTotal.length===0) return;
-      grid += `<div class="section-title">${section}</div>`;
-      catsInSection.forEach(([key])=>{
-        const [p,e,en] = key.split('|');
-        const catTasks = sortTasks(areaTasks.filter(t=>t.priority===p&&t.effort===e&&t.energy===en));
-        if(catTasks.length===0) return;
-        grid += `<div class="cat-title">${p} prioridad · ${e} esfuerzo · ${en} energía</div>`;
-        grid += renderTaskList(catTasks, false, true, false, true);
-      });
-    });
-    grid += `</div>`;
-  });
-  if(!anyToday) html += `<div class="panel"><div class="empty">No tienes tareas programadas para hoy.</div></div>`;
-  else html += `<div class="hoy-grid">${grid}</div>`;
-  return html;
-}
-
-// ---------- Interfaz Tareas por tema (matriz por área) ----------
-function viewMatrizArea(){
-  let html = `<div class="panel"><h2>Tareas por tema</h2><div class="status-msg">En cada categoría: primero tareas "En ejecución", luego "Sin iniciar" — ordenadas por fecha más próxima primero.</div></div>`;
-  AREAS.forEach(area=>{
-    const areaTasks = tasks.filter(t=>t.area===area && (t.status==='Sin iniciar'||t.status==='En ejecución'||t.status==='Pendiente'));
-    html += `<div class="area-block"><div class="area-title">${AREA_LABEL[area]}</div>`;
-
-    const uncategorized = areaTasks.filter(t=>!getCategory(t.priority,t.effort,t.energy));
-    if(uncategorized.length){
-      html += `<div class="cat-title">Sin categorizar (falta prioridad, esfuerzo o energía)</div>`;
-      html += renderTaskList(sortTasks(uncategorized));
-    }
-
-    SECTION_ORDER.forEach(section=>{
-      const catsInSection = Object.entries(CATEGORY_MAP).filter(([k,v])=>v.section===section).sort((a,b)=>a[1].order-b[1].order);
-      let sectionTasksTotal = [];
-      catsInSection.forEach(([key])=>{
-        const [p,e,en] = key.split('|');
-        const catTasks = areaTasks.filter(t=>t.priority===p&&t.effort===e&&t.energy===en);
-        sectionTasksTotal = sectionTasksTotal.concat(catTasks);
-      });
-      if(sectionTasksTotal.length===0 && section!=='EN CAMINO') return;
-      html += `<div class="section-title">${section}</div>`;
-      if(sectionTasksTotal.length===0){
-        html += `<div class="empty">Sin tareas en esta sección.</div>`;
-      } else {
-        catsInSection.forEach(([key])=>{
-          const [p,e,en] = key.split('|');
-          const catTasks = sortTasks(areaTasks.filter(t=>t.priority===p&&t.effort===e&&t.energy===en));
-          if(catTasks.length===0) return;
-          html += `<div class="cat-title">${p} prioridad · ${e} esfuerzo · ${en} energía</div>`;
-          html += renderTaskList(catTasks);
-        });
-      }
-    });
-    html += `</div>`;
-  });
-  return html;
-}
-
-// ---------- Interfaz Todas las tareas (matriz general) ----------
-function viewMatrizGeneral(){
-  let html = `<div class="panel"><h2>Todas las tareas</h2><div class="status-msg">Todas las áreas juntas, en las mismas categorías, ordenadas solo por fecha (más próxima primero).</div></div>`;
-  const allTasks = tasks.filter(t=>t.status==='Sin iniciar'||t.status==='En ejecución'||t.status==='Pendiente');
-
-  const uncategorized = allTasks.filter(t=>!getCategory(t.priority,t.effort,t.energy));
-  if(uncategorized.length){
-    html += `<div class="cat-title">Sin categorizar (falta prioridad, esfuerzo o energía)</div>`;
-    html += renderTaskList(sortByDateOnly(uncategorized), true);
-  }
-
-  SECTION_ORDER.forEach(section=>{
-    const catsInSection = Object.entries(CATEGORY_MAP).filter(([k,v])=>v.section===section).sort((a,b)=>a[1].order-b[1].order);
-    let sectionTasksTotal = [];
-    catsInSection.forEach(([key])=>{
-      const [p,e,en] = key.split('|');
-      sectionTasksTotal = sectionTasksTotal.concat(allTasks.filter(t=>t.priority===p&&t.effort===e&&t.energy===en));
-    });
-    if(sectionTasksTotal.length===0 && section!=='EN CAMINO') return;
-    html += `<div class="section-title">${section}</div>`;
-    if(sectionTasksTotal.length===0){
-      html += `<div class="empty">Sin tareas en esta sección.</div>`;
-    } else {
-      catsInSection.forEach(([key])=>{
-        const [p,e,en] = key.split('|');
-        const catTasks = sortByDateOnly(allTasks.filter(t=>t.priority===p&&t.effort===e&&t.energy===en));
-        if(catTasks.length===0) return;
-        html += `<div class="cat-title">${p} prioridad · ${e} esfuerzo · ${en} energía</div>`;
-        html += renderTaskList(catTasks, true);
-      });
-    }
-  });
-  return html;
-}
 function sortByDateOnly(list){
   return list.slice().sort((a,b)=>{
     const da = a.date||'9999-99-99', db = b.date||'9999-99-99';
@@ -1025,15 +1013,14 @@ function renderTaskEditCard(t){
 }
 
 // ---------- Interfaz ¡Lo hice! (completadas) ----------
-function viewCompletadas(){
+function renderCompletadasContenido(){
   const filter = matrixAreaFilter;
-  let html = `<div class="panel"><h2>¡Lo hice!</h2>
+  let html = `
   <label>Filtrar por área</label>
   <select id="comp_area_filter">
     <option value="">Todas las áreas</option>
     ${AREAS.map(a=>`<option value="${a}" ${filter===a?'selected':''}>${AREA_LABEL[a]}</option>`).join('')}
-  </select>
-  </div>`;
+  </select>`;
   const areasToShow = filter ? [filter] : AREAS;
   areasToShow.forEach(area=>{
     const done = tasks.filter(t=>t.status==='Terminada' && t.area===area)
@@ -2862,7 +2849,7 @@ const DATA_COLUMNS = ['Nombre','Área','Prioridad','Esfuerzo','Energía','Fecha'
 
 function viewDatos(){
   const importRows = importConfirmPending ? countImportRows(pendingImportText) : 0;
-  return `
+  let html = `
   <div class="panel">
     <h2>Exportar a Excel</h2>
     <div class="status-msg">Descarga todas las tareas en un archivo .xlsx, en una sola hoja.</div>
@@ -2890,6 +2877,18 @@ function viewDatos(){
     ${importWarnings.map(w=>`<div class="task-notes" style="margin-bottom:6px;">${escapeHtml(w)}</div>`).join('')}
     <button class="secondary" data-dismiss-warnings="1" style="margin-top:8px;">Cerrar avisos</button>
   </div>` : ''}`;
+
+  const doneCount = tasks.filter(t=>t.status==='Terminada').length;
+  html += `<div class="panel" data-toggle-completadas="1" style="cursor:pointer;">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <h2 style="margin:0;">✅ ¡Lo hice! (${doneCount})</h2>
+      <span style="font-size:16px;color:var(--muted);">${tareasCompletadasAbierto?'▾ cerrar':'▸ ver'}</span>
+    </div>
+  </div>`;
+  if(tareasCompletadasAbierto){
+    html += `<div class="panel">${renderCompletadasContenido()}</div>`;
+  }
+  return html;
 }
 function countImportRows(raw){
   const lines = (raw||'').split(/\r?\n/).filter(l=>l.trim().length>0);
@@ -3336,6 +3335,23 @@ function bindEvents(){
   const compFilter = document.getElementById('comp_area_filter');
   if(compFilter) compFilter.onchange = (e)=>{ matrixAreaFilter = e.target.value || null; render(); };
 
+  document.querySelectorAll('[data-toggle-completadas]').forEach(el=>{
+    el.onclick = ()=>{ tareasCompletadasAbierto = !tareasCompletadasAbierto; render(); };
+  });
+  document.querySelectorAll('[data-toggle-agrupar-tareas]').forEach(b=>{
+    b.onclick = ()=>{ tareasAgruparPorArea = !tareasAgruparPorArea; render(); };
+  });
+  const tareasBuscadorEl = document.getElementById('tareas_buscador');
+  if(tareasBuscadorEl){
+    tareasBuscadorEl.oninput = (e)=>{
+      const cursorPos = e.target.selectionStart;
+      tareasBusqueda = e.target.value;
+      render();
+      const nuevoInput = document.getElementById('tareas_buscador');
+      if(nuevoInput){ nuevoInput.focus(); nuevoInput.setSelectionRange(cursorPos, cursorPos); }
+    };
+  }
+
   const btnExport = document.getElementById('btn_export_excel');
   if(btnExport) btnExport.onclick = exportExcel;
   const btnImport = document.getElementById('btn_import_excel');
@@ -3560,6 +3576,7 @@ async function onCrearTarea(area){
   nameInput.value='';
   nameInput.style.height='';
   nameInput.focus();
+  renderTabs();
 }
 
 async function onSaveOrganize(id){
